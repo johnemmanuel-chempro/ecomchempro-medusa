@@ -1,8 +1,7 @@
 import { Metadata } from "next"
 
 import FeaturedProducts from "@modules/home/components/featured-products"
-import Hero from "@modules/home/components/hero"
-import { listCollections } from "@lib/data/collections"
+import { getFeaturedProducts } from "@lib/data/featured-products"
 import { getRegion } from "@lib/data/regions"
 import Banner from "@modules/common/components/banner"
 import Image from "next/image"
@@ -22,12 +21,9 @@ export default async function Home(props: {
   const { countryCode } = params
 
   const region = await getRegion(countryCode)
+  const featured = await getFeaturedProducts({ countryCode })
 
-  const { collections } = await listCollections({
-    fields: "id, handle, title",
-  })
-
-  if (!collections || !region) {
+  if (!region) {
     return null
   }
 
@@ -116,6 +112,14 @@ export default async function Home(props: {
           <p className="text-sm text-ui-fg-muted">Enjoy everyday savings across products, prescriptions and pharmacy services.</p>
         </div>
 
+        {featured?.enabled && featured.products.length > 0 ? (
+          <FeaturedProducts
+            title={featured.title}
+            subtitle={featured.subtitle}
+            products={featured.products}
+            region={region}
+          />
+        ) : null}
       </div>
     </>
   )

@@ -156,7 +156,7 @@ export default function NavMenu({ categories }: NavMenuProps) {
               key={item.label}
               type="button"
               onClick={() => handleNavItemClick(item.label)}
-              className={`relative hover:bg-[#045a9c] duration-200 rounded-md px-2 py-1 cursor-pointer uppercase text-sm ${
+              className={`relative hover:bg-[#045a9c] duration-200 rounded-md p-2 px-3 cursor-pointer uppercase text-sm ${
                 item.label === "PRODUCTS" && productsOpen
                   ? "bg-[#045a9c]"
                   : ""
@@ -166,7 +166,7 @@ export default function NavMenu({ categories }: NavMenuProps) {
               {item.label === "PRODUCTS" && productsOpen && (
                 <FontAwesomeIcon
                   icon={faCaretUp}
-                  className="pointer-events-none absolute left-1/2 top-[27px] z-[60] -translate-x-1/2 text-white"
+                  className="pointer-events-none absolute left-1/2 top-[32px] z-[60] -translate-x-1/2 text-white"
                   size="xl"
                 />
               )}
@@ -179,7 +179,7 @@ export default function NavMenu({ categories }: NavMenuProps) {
             className="bg-[#045a9c] text-white px-4 py-2 rounded-md border border-[#ffffff]"
           >
             <FontAwesomeIcon icon={faLocationDot} size="lg" />
-            FIND CHEMPROs
+            FIND CHEMPRO
           </button>
         </div>
       </div>

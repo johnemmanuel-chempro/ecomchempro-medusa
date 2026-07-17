@@ -17,5 +17,8 @@ module.exports = defineConfig({
     {
       resolve: "./src/modules/import-export",
     },
+    {
+      resolve: "./src/modules/featured-products",
+    },
   ],
 })
