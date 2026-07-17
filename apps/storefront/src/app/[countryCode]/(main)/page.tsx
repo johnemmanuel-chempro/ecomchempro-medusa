@@ -59,11 +59,63 @@ export default async function Home(props: {
           </div>
         </div>
       </div>
-      {/* <Hero /> */}
-      <div className="py-12">
-        <ul className="flex flex-col gap-x-6">
-          <FeaturedProducts collections={collections} region={region} />
-        </ul>
+
+      <div className="relative mt-[50px] overflow-hidden bg-[#28a8df] pb-16 pt-4">
+        <div className="relative z-10 flex h-[100px] w-full items-center gap-x-3 overflow-x-auto px-6 text-white small:justify-center">
+          <div className="min-w-[250px] rounded-[20px] border border-[#0780bb] bg-[#098cc9] p-3 shadow-sm">
+            <p className="text-center">Vitamins & Supplements</p>
+          </div>
+
+          <div className="min-w-[250px] rounded-[20px] border border-[#0780bb] bg-[#098cc9] p-3 shadow-sm">
+            <p className="text-center">Beauty</p>
+          </div>
+
+          <div className="min-w-[250px] rounded-[20px] border border-[#0780bb] bg-[#098cc9] p-3 shadow-sm">
+            <p className="text-center">Pet Supplies</p>
+          </div>
+
+          <div className="min-w-[250px] rounded-[20px] border border-[#0780bb] bg-[#098cc9] p-3 shadow-sm">
+            <p className="text-center">Baby Care</p>
+          </div>
+
+          <div className="min-w-[250px] rounded-[20px] border border-[#0780bb] bg-[#098cc9] p-3 shadow-sm">
+            <p className="text-center">Medication</p>
+          </div>
+        </div>
+
+        <svg
+          aria-hidden="true"
+          className="pointer-events-none absolute bottom-0 left-0 h-32 w-full"
+          preserveAspectRatio="none"
+          viewBox="0 0 1440 128"
+        >
+          <defs>
+            <linearGradient id="category-wave" x1="0" x2="1" y1="0" y2="0">
+              <stop offset="0%" stopColor="#ef321b" />
+              <stop offset="55%" stopColor="#ff8a2a" />
+              <stop offset="100%" stopColor="#ffd55a" />
+            </linearGradient>
+          </defs>
+          <path
+            d="M0 75C340 145 750 42 1100 25C1235 18 1350 19 1440 25V128H0Z"
+            fill="url(#category-wave)"
+          />
+          <path
+            d="M0 86C340 151 750 69 1100 77C1235 80 1350 98 1440 110V128H0Z"
+            fill="white"
+          />
+        </svg>
+
+      </div>
+
+
+    {/* initial display of products */}
+      <div className="bg-white w-full">
+        <div className="content-container py-10">
+          <p className="text-2xl font-bold text-[#045a9c]" >Great Value Across Your Everyday Essentials</p>
+          <p className="text-sm text-ui-fg-muted">Enjoy everyday savings across products, prescriptions and pharmacy services.</p>
+        </div>
+
       </div>
     </>
   )

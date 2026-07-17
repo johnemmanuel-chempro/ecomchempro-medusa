@@ -85,8 +85,8 @@ export default async function Nav() {
             </div>
           </div>
         </nav>
-        <div className="relative border-y border-[#41adde]">
-          <div className="py-4 content-container">
+        <div className="border-y border-[#26a1da]">
+          <div className="py-4 content-container relative">
             <NavMenu categories={productCategories ?? []} />
           </div>
         </div>

@@ -5,6 +5,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome"
 import { HttpTypes } from "@medusajs/types"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 import { useEffect, useRef, useState } from "react"
+import Image from "next/image"
 
 type NavCategory = Pick<
   HttpTypes.StoreProductCategory,
@@ -35,7 +36,7 @@ export default function NavMenu({ categories }: NavMenuProps) {
   const [selectedL2, setSelectedL2] = useState<NavCategory | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const dropdownRef = useRef<HTMLDivElement>(null)
-  const [dropdownHeight, setDropdownHeight] = useState<number>()
+  const [dropdownStyle, setDropdownStyle] = useState<{ top: number; height: number }>()
 
   const getChildren = (category: NavCategory) => {
     if (category.category_children?.length) {
@@ -85,18 +86,26 @@ export default function NavMenu({ categories }: NavMenuProps) {
       return
     }
 
-    const updateDropdownHeight = () => {
-      const top = dropdownRef.current?.getBoundingClientRect().top
+    const updateDropdownPosition = () => {
+      const bottom = menuRef.current?.getBoundingClientRect().bottom
 
-      if (top !== undefined) {
-        setDropdownHeight(Math.max(0, window.innerHeight - top))
+      if (bottom !== undefined) {
+        const top = bottom + 4
+        setDropdownStyle({
+          top,
+          height: Math.max(0, window.innerHeight - top),
+        })
       }
     }
 
-    updateDropdownHeight()
-    window.addEventListener("resize", updateDropdownHeight)
+    updateDropdownPosition()
+    window.addEventListener("resize", updateDropdownPosition)
+    window.addEventListener("scroll", updateDropdownPosition, true)
 
-    return () => window.removeEventListener("resize", updateDropdownHeight)
+    return () => {
+      window.removeEventListener("resize", updateDropdownPosition)
+      window.removeEventListener("scroll", updateDropdownPosition, true)
+    }
   }, [productsOpen])
 
   const renderCategoryItem = (
@@ -120,7 +129,7 @@ export default function NavMenu({ categories }: NavMenuProps) {
           onClick={() => onExpand(category)}
           className={`${itemClassName} ${selectedClass}`}
         >
-          <span>{category.name}</span>
+          <span className="m-2">{category.name}</span>
           <FontAwesomeIcon icon={faChevronRight} className="text-xs opacity-70" />
         </button>
       )
@@ -133,7 +142,7 @@ export default function NavMenu({ categories }: NavMenuProps) {
         onClick={closeDropdown}
         className={`${itemClassName} ${selectedClass}`}
       >
-        <span>{category.name}</span>
+        <span className="m-2">{category.name}</span>
       </LocalizedClientLink>
     )
   }
@@ -157,7 +166,7 @@ export default function NavMenu({ categories }: NavMenuProps) {
               {item.label === "PRODUCTS" && productsOpen && (
                 <FontAwesomeIcon
                   icon={faCaretUp}
-                  className="pointer-events-none absolute left-1/2 top-[43px] z-[60] -translate-x-1/2 text-white"
+                  className="pointer-events-none absolute left-1/2 top-[27px] z-[60] -translate-x-1/2 text-white"
                   size="xl"
                 />
               )}
@@ -178,11 +187,11 @@ export default function NavMenu({ categories }: NavMenuProps) {
       {productsOpen && (
         <div
           ref={dropdownRef}
-          className="absolute inset-x-0 top-full z-50 mt-1 bg-white text-black shadow-lg"
-          style={{ height: dropdownHeight }}
+          className="fixed inset-x-0 z-50 bg-white text-black shadow-lg"
+          style={dropdownStyle}
         >
           <div className="flex items-stretch gap-x-0 h-full">
-            <div className="p-2 min-w-[250px] overflow-y-auto">
+            <div className="p-2 min-w-[300px] overflow-y-auto p-5 mt-2">
               {level1.length === 0 ? (
                 <p className="px-2 py-1 text-sm text-ui-fg-muted">
                   No categories yet
@@ -201,7 +210,7 @@ export default function NavMenu({ categories }: NavMenuProps) {
             </div>
 
             {selectedL1 && level2.length > 0 && (
-              <div className="p-2 min-w-[200px] overflow-y-auto border-l-2 border-indigo-500">
+              <div className="p-2 min-w-[300px] overflow-y-auto border-l-2 border-gray-150 p-5 mt-2">
                 {level2.map((category) =>
                   renderCategoryItem(category, {
                     selected: selectedL2?.id === category.id,
@@ -212,7 +221,7 @@ export default function NavMenu({ categories }: NavMenuProps) {
             )}
 
             {selectedL2 && level3.length > 0 && (
-              <div className="p-2 min-w-[200px] overflow-y-auto border-l-2 border-indigo-500">
+              <div className="p-2 min-w-[200px] overflow-y-auto border-l-2 border-gray-150 p-5 mt-2">
                 {level3.map((category) =>
                   renderCategoryItem(category, {})
                 )}
