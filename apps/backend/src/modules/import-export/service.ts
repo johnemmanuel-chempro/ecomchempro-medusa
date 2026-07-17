@@ -14,7 +14,10 @@ import {
 } from "@medusajs/medusa/core-flows"
 import type {
   CategoryCsvRow,
+  CategoryImportOptions,
   CategoryImportSummary,
+  CategoryParentReferenceType,
+  CategoryVerifySummary,
   ImportExportEntity,
   ProductImportOptions,
   ProductImportSummary,
@@ -27,10 +30,11 @@ import { getTemplate } from "./templates"
 
 const CATEGORY_HEADERS = [
   "Category Id",
-  "Category Handle",
+  "SEO URL",
   "Category Name",
   "Category Description",
-  "Parent Handle",
+  "Parent Category Id",
+  "Parent SEO URL",
   "Is Active",
   "Is Internal",
   "Rank",
@@ -159,13 +163,17 @@ export default class ImportExportModuleService {
       ],
     })
 
-    const rows = (categories as CategoryRecord[]).map((category) => ({
+    const rows = (
+      categories as Array<
+        CategoryRecord & { parent_category?: { handle?: string | null } | null }
+      >
+    ).map((category) => ({
       "Category Id": category.id,
-      "Category Handle": category.handle,
+      "SEO URL": category.handle,
       "Category Name": category.name,
       "Category Description": category.description ?? "",
-      "Parent Handle": (category as { parent_category?: { handle?: string } })
-        .parent_category?.handle ?? "",
+      "Parent Category Id": category.parent_category_id ?? "",
+      "Parent SEO URL": category.parent_category?.handle ?? "",
       "Is Active": category.is_active ?? true,
       "Is Internal": category.is_internal ?? false,
       Rank: category.rank ?? 0,
@@ -288,47 +296,379 @@ export default class ImportExportModuleService {
 
     return records.map((record) => {
       const name =
-        record["Category Name"] ||
-        record.name ||
-        record.Name ||
-        ""
-
-      if (!name) {
-        throw new MedusaError(
-          MedusaError.Types.INVALID_DATA,
-          "Each category row must include a name"
-        )
-      }
+        pickRowValue(record, "Category Name", "name", "Name") || ""
 
       const handle =
-        record["Category Handle"] ||
-        record.handle ||
-        slugify(name)
+        pickRowValue(
+          record,
+          "SEO URL",
+          "Category Handle",
+          "handle",
+          "seo url",
+          "seo_url"
+        ) || (name ? slugify(name) : "")
+
+      const parentCategoryId = pickRowValue(
+        record,
+        "Parent Category Id",
+        "parent_category_id",
+        "Parent Category ID"
+      )
+      const parentHandle = pickRowValue(
+        record,
+        "Parent SEO URL",
+        "Parent Handle",
+        "parent_handle",
+        "parent seo url",
+        "parent_seo_url"
+      )
+
+      const rankValue = pickRowValue(record, "Rank", "rank")
+      const rankNumber = rankValue ? Number(rankValue) : undefined
 
       return {
-        id: record["Category Id"] || record.id || undefined,
+        id: pickRowValue(record, "Category Id", "id") || undefined,
         handle,
         name,
         description:
-          record["Category Description"] || record.description || undefined,
-        parent_handle:
-          record["Parent Handle"] || record.parent_handle || undefined,
+          pickRowValue(record, "Category Description", "description") ||
+          undefined,
+        parent_category_id: parentCategoryId || undefined,
+        parent_handle: parentHandle || undefined,
         is_active: parseBoolean(
-          record["Is Active"] || record.is_active
+          pickRowValue(record, "Is Active", "is_active") || undefined
         ),
         is_internal: parseBoolean(
-          record["Is Internal"] || record.is_internal
+          pickRowValue(record, "Is Internal", "is_internal") || undefined
         ),
-        rank: record.Rank || record.rank ? Number(record.Rank || record.rank) : undefined,
+        rank:
+          rankNumber !== undefined && Number.isFinite(rankNumber)
+            ? rankNumber
+            : undefined,
       }
     })
   }
 
+  private resolveCategoryParentRef(
+    row: CategoryCsvRow,
+    parentReferenceType: CategoryParentReferenceType
+  ): { parentCategoryId?: string; parentHandle?: string } {
+    if (parentReferenceType === "category_id") {
+      return row.parent_category_id
+        ? { parentCategoryId: row.parent_category_id }
+        : {}
+    }
+
+    return row.parent_handle ? { parentHandle: row.parent_handle } : {}
+  }
+
+  private async planCategoryImport(
+    container: MedusaContainer,
+    content: string,
+    options: CategoryImportOptions
+  ): Promise<{
+    summary: CategoryVerifySummary
+    operations: {
+      rowNumber: number
+      action: "create" | "update"
+      existingId?: string
+      payload: {
+        name: string
+        handle: string
+        description?: string
+        is_active: boolean
+        is_internal: boolean
+        rank: number
+      }
+      parentCategoryId?: string
+      parentHandle?: string
+    }[]
+  }> {
+    const rows = this.parseCategoryRows(content)
+    const query = container.resolve(ContainerRegistrationKeys.QUERY)
+    const { data: existingCategories } = await query.graph({
+      entity: "product_category",
+      fields: ["id", "handle", "name"],
+    })
+
+    const categoriesByHandle = new Map<string, CategoryRecord>()
+    const categoriesById = new Map<string, CategoryRecord>()
+
+    for (const category of existingCategories as CategoryRecord[]) {
+      categoriesByHandle.set(category.handle, category)
+      categoriesById.set(category.id, category)
+    }
+
+    type DraftOperation = {
+      rowNumber: number
+      action: "create" | "update"
+      existingId?: string
+      payload: {
+        name: string
+        handle: string
+        description?: string
+        is_active: boolean
+        is_internal: boolean
+        rank: number
+      }
+      parentCategoryId?: string
+      parentHandle?: string
+      rowErrors: string[]
+      hasConflict: boolean
+      hasNotFound: boolean
+      hasMissingParent: boolean
+    }
+
+    const drafts: DraftOperation[] = []
+    const fileHandles = new Set<string>()
+    const fileIds = new Set<string>()
+
+    for (let index = 0; index < rows.length; index++) {
+      const row = rows[index]
+      const rowNumber = index + 2
+      const rowErrors: string[] = []
+      let hasConflict = false
+      let hasNotFound = false
+
+      if (!row.name) {
+        rowErrors.push("Category Name is required")
+      }
+
+      if (!row.handle) {
+        rowErrors.push("SEO URL is required")
+      }
+
+      if (
+        row.rank !== undefined &&
+        (!Number.isFinite(row.rank) || !Number.isInteger(row.rank))
+      ) {
+        rowErrors.push("Rank must be a whole number")
+      }
+
+      if (options.mode === "update") {
+        if (!row.id) {
+          rowErrors.push("Category Id is required for update mode")
+        } else if (!categoriesById.has(row.id)) {
+          hasNotFound = true
+          rowErrors.push(`Category Id "${row.id}" was not found`)
+        } else if (fileIds.has(row.id)) {
+          hasConflict = true
+          rowErrors.push(`Duplicate Category Id "${row.id}" in this file`)
+        } else if (row.name && row.handle) {
+          fileIds.add(row.id)
+        }
+      } else if (row.handle) {
+        if (categoriesByHandle.has(row.handle)) {
+          hasConflict = true
+          rowErrors.push(
+            `SEO URL "${row.handle}" already exists (use update mode)`
+          )
+        } else if (fileHandles.has(row.handle)) {
+          hasConflict = true
+          rowErrors.push(
+            `Duplicate SEO URL "${row.handle}" in this file`
+          )
+        } else if (row.name) {
+          // Only identity-valid create rows can be parent targets in-file.
+          // Category Id is ignored in create mode (same as products).
+          fileHandles.add(row.handle)
+        }
+      }
+
+      if (
+        options.parent_reference_type === "category_id" &&
+        row.parent_handle &&
+        !row.parent_category_id
+      ) {
+        rowErrors.push(
+          "Parent SEO URL is ignored; fill Parent Category Id for the selected parent method"
+        )
+      }
+
+      if (
+        options.parent_reference_type === "seo_url" &&
+        row.parent_category_id &&
+        !row.parent_handle
+      ) {
+        rowErrors.push(
+          "Parent Category Id is ignored; fill Parent SEO URL for the selected parent method"
+        )
+      }
+
+      const parentRef = this.resolveCategoryParentRef(
+        row,
+        options.parent_reference_type
+      )
+
+      drafts.push({
+        rowNumber,
+        action: options.mode === "create" ? "create" : "update",
+        existingId: options.mode === "update" ? row.id : undefined,
+        payload: {
+          name: row.name,
+          handle: row.handle || "",
+          description: row.description,
+          is_active: row.is_active ?? true,
+          is_internal: row.is_internal ?? false,
+          rank: row.rank ?? 0,
+        },
+        parentCategoryId: parentRef.parentCategoryId,
+        parentHandle: parentRef.parentHandle,
+        rowErrors,
+        hasConflict,
+        hasNotFound,
+        hasMissingParent: false,
+      })
+    }
+
+    for (const draft of drafts) {
+      if (draft.parentCategoryId) {
+        const parentExists = categoriesById.has(draft.parentCategoryId)
+
+        if (!parentExists) {
+          draft.hasMissingParent = true
+          draft.rowErrors.push(
+            `Parent Category Id "${draft.parentCategoryId}" was not found`
+          )
+        } else if (
+          draft.existingId &&
+          draft.parentCategoryId === draft.existingId
+        ) {
+          draft.rowErrors.push("A category cannot be its own parent")
+        }
+      }
+
+      if (draft.parentHandle) {
+        const parentExists =
+          categoriesByHandle.has(draft.parentHandle) ||
+          fileHandles.has(draft.parentHandle)
+
+        if (!parentExists) {
+          draft.hasMissingParent = true
+          draft.rowErrors.push(
+            `Parent SEO URL "${draft.parentHandle}" was not found`
+          )
+        } else if (
+          draft.payload.handle &&
+          draft.parentHandle === draft.payload.handle
+        ) {
+          draft.rowErrors.push("A category cannot be its own parent")
+        }
+      }
+    }
+
+    const errors: { row: number; message: string }[] = []
+    const operations: {
+      rowNumber: number
+      action: "create" | "update"
+      existingId?: string
+      payload: {
+        name: string
+        handle: string
+        description?: string
+        is_active: boolean
+        is_internal: boolean
+        rank: number
+      }
+      parentCategoryId?: string
+      parentHandle?: string
+    }[] = []
+
+    let wouldCreate = 0
+    let wouldUpdate = 0
+    let notFound = 0
+    let invalid = 0
+    let missingParent = 0
+    let conflicts = 0
+
+    for (const draft of drafts) {
+      if (draft.hasNotFound) {
+        notFound++
+      }
+      if (draft.hasConflict) {
+        conflicts++
+      }
+      if (draft.hasMissingParent) {
+        missingParent++
+      }
+
+      if (draft.rowErrors.length) {
+        invalid++
+        for (const message of draft.rowErrors) {
+          errors.push({ row: draft.rowNumber, message })
+        }
+        continue
+      }
+
+      if (draft.action === "create") {
+        wouldCreate++
+      } else {
+        wouldUpdate++
+      }
+
+      operations.push({
+        rowNumber: draft.rowNumber,
+        action: draft.action,
+        existingId: draft.existingId,
+        payload: draft.payload,
+        parentCategoryId: draft.parentCategoryId,
+        parentHandle: draft.parentHandle,
+      })
+    }
+
+    const samples = operations.slice(0, 5).map((operation) => ({
+      id: operation.existingId,
+      handle: operation.payload.handle,
+      name: operation.payload.name,
+      action: operation.action,
+    }))
+
+    return {
+      summary: {
+        rows: rows.length,
+        would_create: wouldCreate,
+        would_update: wouldUpdate,
+        not_found: notFound,
+        invalid,
+        missing_parent: missingParent,
+        conflicts,
+        mode: options.mode,
+        parent_reference_type: options.parent_reference_type,
+        samples,
+        errors,
+      },
+      operations,
+    }
+  }
+
   async importCategories(
     container: MedusaContainer,
-    content: string
-  ): Promise<CategoryImportSummary> {
-    const rows = this.parseCategoryRows(content)
+    content: string,
+    options: CategoryImportOptions
+  ): Promise<
+    | { kind: "verify"; summary: CategoryVerifySummary }
+    | { kind: "result"; summary: CategoryImportSummary }
+  > {
+    const plan = await this.planCategoryImport(container, content, options)
+
+    if (options.dry_run) {
+      return { kind: "verify", summary: plan.summary }
+    }
+
+    if (plan.summary.errors.length) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        `Category import has ${plan.summary.errors.length} validation error(s). Verify the file first.`
+      )
+    }
+
+    if (!plan.operations.length) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        "No categories to import from the uploaded CSV"
+      )
+    }
+
     const query = container.resolve(ContainerRegistrationKeys.QUERY)
     const { data: existingCategories } = await query.graph({
       entity: "product_category",
@@ -352,69 +692,67 @@ export default class ImportExportModuleService {
 
     const pendingParentLinks: {
       categoryId: string
-      parentHandle: string
+      parentCategoryId?: string
+      parentHandle?: string
       row: number
     }[] = []
 
-    for (let index = 0; index < rows.length; index++) {
-      const row = rows[index]
-      const rowNumber = index + 2
-
+    for (const operation of plan.operations) {
       try {
-        const existing =
-          (row.id && categoriesById.get(row.id)) ||
-          (row.handle && categoriesByHandle.get(row.handle)) ||
-          null
-
-        const payload = {
-          name: row.name,
-          handle: row.handle,
-          description: row.description,
-          is_active: row.is_active ?? true,
-          is_internal: row.is_internal ?? false,
-          rank: row.rank ?? 0,
-        }
-
-        if (existing) {
+        if (operation.action === "update" && operation.existingId) {
           await updateProductCategoriesWorkflow(container).run({
             input: {
-              selector: { id: existing.id },
-              update: payload,
+              selector: { id: operation.existingId },
+              update: operation.payload,
             },
           })
+
+          const updated: CategoryRecord = {
+            id: operation.existingId,
+            name: operation.payload.name,
+            handle: operation.payload.handle,
+          }
+          categoriesById.set(updated.id, updated)
+          categoriesByHandle.set(updated.handle, updated)
           summary.updated++
+
+          if (operation.parentCategoryId || operation.parentHandle) {
+            pendingParentLinks.push({
+              categoryId: operation.existingId,
+              parentCategoryId: operation.parentCategoryId,
+              parentHandle: operation.parentHandle,
+              row: operation.rowNumber,
+            })
+          }
         } else {
           const { result } = await createProductCategoriesWorkflow(container).run({
             input: {
-              product_categories: [payload],
+              product_categories: [operation.payload],
             },
           })
 
           const created = result[0]
-
-          if (created) {
-            categoriesByHandle.set(created.handle, created as CategoryRecord)
-            categoriesById.set(created.id, created as CategoryRecord)
+          if (!created) {
+            throw new Error("Category create did not return a result")
           }
 
+          categoriesByHandle.set(created.handle, created as CategoryRecord)
+          categoriesById.set(created.id, created as CategoryRecord)
           summary.created++
-        }
 
-        const categoryId =
-          existing?.id ||
-          categoriesByHandle.get(row.handle!)?.id
-
-        if (row.parent_handle && categoryId) {
-          pendingParentLinks.push({
-            categoryId,
-            parentHandle: row.parent_handle,
-            row: rowNumber,
-          })
+          if (operation.parentCategoryId || operation.parentHandle) {
+            pendingParentLinks.push({
+              categoryId: created.id,
+              parentCategoryId: operation.parentCategoryId,
+              parentHandle: operation.parentHandle,
+              row: operation.rowNumber,
+            })
+          }
         }
       } catch (error) {
         summary.failed++
         summary.errors.push({
-          row: rowNumber,
+          row: operation.rowNumber,
           message: error instanceof Error ? error.message : "Unknown error",
         })
       }
@@ -422,10 +760,18 @@ export default class ImportExportModuleService {
 
     for (const link of pendingParentLinks) {
       try {
-        const parent = categoriesByHandle.get(link.parentHandle)
+        const parent =
+          (link.parentCategoryId &&
+            categoriesById.get(link.parentCategoryId)) ||
+          (link.parentHandle && categoriesByHandle.get(link.parentHandle)) ||
+          null
 
         if (!parent) {
-          throw new Error(`Parent category "${link.parentHandle}" was not found`)
+          const ref =
+            link.parentCategoryId ||
+            link.parentHandle ||
+            "unknown"
+          throw new Error(`Parent category "${ref}" was not found`)
         }
 
         await updateProductCategoriesWorkflow(container).run({
@@ -445,7 +791,7 @@ export default class ImportExportModuleService {
       }
     }
 
-    return summary
+    return { kind: "result", summary }
   }
 
   /**

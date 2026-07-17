@@ -18,7 +18,7 @@ export default async function Nav() {
     listRegions().then((regions: StoreRegion[]) => regions),
     listLocales(),
     getLocale(),
-    listCategories({ limit: 100 }),
+    listCategories({ limit: 500 }),
   ])
 
   return (
@@ -85,8 +85,8 @@ export default async function Nav() {
             </div>
           </div>
         </nav>
-        <div className="border-y border-[#41adde]">
-          <div className="py-4 content-container relative">
+        <div className="relative border-y border-[#41adde]">
+          <div className="py-4 content-container">
             <NavMenu categories={productCategories ?? []} />
           </div>
         </div>

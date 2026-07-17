@@ -4,9 +4,9 @@ const PRODUCT_TEMPLATE = `Product Id,Product Handle,Product Title,Product Subtit
 ,chempro-sample,ChemPro Sample Product,,Sample product with Size and Color options.,published,,,S / Black,CP-SAMPLE-S-BLACK,,FALSE,TRUE,19.99,Size,S,Color,Black,,
 ,chempro-sample,ChemPro Sample Product,,Sample product with Size and Color options.,published,,,S / White,CP-SAMPLE-S-WHITE,,FALSE,TRUE,19.99,Size,S,Color,White,,`
 
-const CATEGORY_TEMPLATE = `Category Id,Category Handle,Category Name,Category Description,Parent Handle,Is Active,Is Internal,Rank
-,chemicals,Chemicals,Top-level chemicals category,,TRUE,FALSE,0
-,lab-supplies,Lab Supplies,Lab supply products,chemicals,TRUE,FALSE,1`
+const CATEGORY_TEMPLATE = `Category Id,SEO URL,Category Name,Category Description,Parent Category Id,Parent SEO URL,Is Active,Is Internal,Rank
+,chemicals,Chemicals,Top-level chemicals category,,,TRUE,FALSE,0
+,lab-supplies,Lab Supplies,Lab supply products,,chemicals,TRUE,FALSE,1`
 
 const TEMPLATES: Record<ImportExportEntity, { filename: string; content: string }> =
   {

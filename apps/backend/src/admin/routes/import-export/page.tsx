@@ -17,6 +17,8 @@ import { useState } from "react"
 
 type ImportExportEntity = "products" | "categories"
 type ProductImportMode = "create" | "update"
+type CategoryImportMode = "create" | "update"
+type CategoryParentReferenceType = "seo_url" | "category_id"
 
 type ProductUpdateField =
   | "status"
@@ -64,12 +66,40 @@ type ProductCreateVerifySummary = {
   errors: { row: number; message: string }[]
 }
 
-type ImportVerifySummary = ProductVerifySummary | ProductCreateVerifySummary
+type CategoryVerifySummary = {
+  rows: number
+  would_create: number
+  would_update: number
+  not_found: number
+  invalid: number
+  missing_parent: number
+  conflicts: number
+  mode: CategoryImportMode
+  parent_reference_type: CategoryParentReferenceType
+  samples: {
+    id?: string
+    handle: string
+    name: string
+    action: "create" | "update"
+  }[]
+  errors: { row: number; message: string }[]
+}
 
-function isCreateVerifySummary(
+type ImportVerifySummary =
+  | ProductVerifySummary
+  | ProductCreateVerifySummary
+  | CategoryVerifySummary
+
+function isProductCreateVerifySummary(
   summary: ImportVerifySummary
 ): summary is ProductCreateVerifySummary {
   return "would_create_products" in summary
+}
+
+function isCategoryVerifySummary(
+  summary: ImportVerifySummary
+): summary is CategoryVerifySummary {
+  return "would_create" in summary && "parent_reference_type" in summary
 }
 
 const PRODUCT_FIELD_OPTIONS: { id: ProductUpdateField; label: string }[] = [
@@ -130,6 +160,7 @@ const EntityPanel = ({
   const [verifySummary, setVerifySummary] = useState(null)
   const [importMode, setImportMode] = useState("update")
   const [updateFields, setUpdateFields] = useState(DEFAULT_UPDATE_FIELDS)
+  const [parentReferenceType, setParentReferenceType] = useState("category_id")
 
   const resetImportState = () => {
     setPreview(null)
@@ -143,6 +174,12 @@ const EntityPanel = ({
         : [...current, fieldId]
     )
     setVerifySummary(null)
+  }
+
+  const setCategoryMode = (value) => {
+    setImportMode(value)
+    setParentReferenceType(value === "create" ? "seo_url" : "category_id")
+    resetImportState()
   }
 
   const handleExport = async () => {
@@ -186,12 +223,27 @@ const EntityPanel = ({
     return formData
   }
 
+  const buildCategoryFormData = (dryRun = false) => {
+    const formData = new FormData()
+    formData.append("file", file)
+    formData.append("mode", importMode)
+    formData.append("parent_reference_type", parentReferenceType)
+    if (dryRun) {
+      formData.append("dry_run", "true")
+    }
+    return formData
+  }
+
   const handleVerify = async () => {
-    if (!file || entity !== "products") {
+    if (!file || (entity !== "products" && entity !== "categories")) {
       return
     }
 
-    if (importMode === "update" && !updateFields.length) {
+    if (
+      entity === "products" &&
+      importMode === "update" &&
+      !updateFields.length
+    ) {
       toast.error("Select at least one field to update")
       return
     }
@@ -199,10 +251,15 @@ const EntityPanel = ({
     setIsVerifying(true)
 
     try {
+      const body =
+        entity === "products"
+          ? buildProductFormData(true)
+          : buildCategoryFormData(true)
+
       const response = await fetch(adminApiPath(`admin/import-export/${entity}`), {
         method: "POST",
         credentials: "include",
-        body: buildProductFormData(true),
+        body,
       })
 
       const data = await response.json()
@@ -214,7 +271,21 @@ const EntityPanel = ({
       setVerifySummary(data.summary)
       setPreview(null)
 
-      if (isCreateVerifySummary(data.summary)) {
+      if (isCategoryVerifySummary(data.summary)) {
+        const ready =
+          data.summary.would_create + data.summary.would_update
+        if (data.summary.errors?.length) {
+          toast.error(
+            `${data.summary.errors.length} validation issue(s) found`
+          )
+        } else {
+          toast.success(
+            importMode === "create"
+              ? `${ready} categor${ready === 1 ? "y" : "ies"} ready to create`
+              : `${ready} categor${ready === 1 ? "y" : "ies"} ready to update`
+          )
+        }
+      } else if (isProductCreateVerifySummary(data.summary)) {
         if (data.summary.missing_sku > 0) {
           toast.error(
             `${data.summary.missing_sku} row(s) missing Variant SKU (required for new products)`
@@ -255,10 +326,27 @@ const EntityPanel = ({
       }
       if (
         importMode === "create" &&
-        isCreateVerifySummary(verifySummary) &&
+        isProductCreateVerifySummary(verifySummary) &&
         verifySummary.missing_sku > 0
       ) {
         toast.error("Fix missing Variant SKU rows before importing")
+        return
+      }
+    }
+
+    if (entity === "categories") {
+      if (!verifySummary || !isCategoryVerifySummary(verifySummary)) {
+        toast.error("Verify the file first before importing")
+        return
+      }
+      if (verifySummary.errors?.length) {
+        toast.error("Fix validation errors before importing")
+        return
+      }
+      if (
+        verifySummary.would_create + verifySummary.would_update === 0
+      ) {
+        toast.error("Nothing to import after verification")
         return
       }
     }
@@ -269,11 +357,7 @@ const EntityPanel = ({
       const formData =
         entity === "products"
           ? buildProductFormData(false)
-          : (() => {
-              const next = new FormData()
-              next.append("file", file)
-              return next
-            })()
+          : buildCategoryFormData(false)
 
       const response = await fetch(adminApiPath(`admin/import-export/${entity}`), {
         method: "POST",
@@ -299,10 +383,16 @@ const EntityPanel = ({
   }
 
   const categorySummary =
-    entity === "categories" ? preview?.summary : null
+    entity === "categories" && !preview?.verified ? preview?.summary : null
 
   const productSummary =
     entity === "products" && !preview?.verified ? preview?.summary : null
+
+  const requiresVerify = entity === "products" || entity === "categories"
+  const categoryHasErrors =
+    verifySummary &&
+    isCategoryVerifySummary(verifySummary) &&
+    verifySummary.errors?.length > 0
 
   return (
     <Container className="divide-y p-0">
@@ -390,6 +480,79 @@ const EntityPanel = ({
             </div>
           )}
 
+          {entity === "categories" && (
+            <div className="flex flex-col gap-y-4 rounded-lg border p-4">
+              <div className="flex flex-col gap-y-2">
+                <Text size="small" weight="plus">
+                  Import mode
+                </Text>
+                <RadioGroup
+                  value={importMode}
+                  onValueChange={setCategoryMode}
+                >
+                  <div className="flex items-center gap-x-2">
+                    <RadioGroup.Item value="update" id="category-mode-update" />
+                    <Label htmlFor="category-mode-update" weight="plus">
+                      Update existing categories
+                    </Label>
+                  </div>
+                  <Text size="small" className="text-ui-fg-subtle pl-6">
+                    Requires Category Id on every row. Verify first, then import.
+                  </Text>
+                  <div className="flex items-center gap-x-2">
+                    <RadioGroup.Item value="create" id="category-mode-create" />
+                    <Label htmlFor="category-mode-create" weight="plus">
+                      Add new categories
+                    </Label>
+                  </div>
+                  <Text size="small" className="text-ui-fg-subtle pl-6">
+                    Creates categories from the CSV (Category Id is ignored).
+                    Existing SEO URLs are rejected. Verify first, then import.
+                  </Text>
+                </RadioGroup>
+              </div>
+
+              <div className="flex flex-col gap-y-2">
+                <Text size="small" weight="plus">
+                  Parent reference
+                </Text>
+                <RadioGroup
+                  value={parentReferenceType}
+                  onValueChange={(value) => {
+                    setParentReferenceType(value)
+                    resetImportState()
+                  }}
+                >
+                  <div className="flex items-center gap-x-2">
+                    <RadioGroup.Item
+                      value="seo_url"
+                      id="parent-ref-seo-url"
+                    />
+                    <Label htmlFor="parent-ref-seo-url" weight="plus">
+                      Parent SEO URL
+                    </Label>
+                  </div>
+                  <Text size="small" className="text-ui-fg-subtle pl-6">
+                    Best for create imports. Can reference a parent created in
+                    the same file.
+                  </Text>
+                  <div className="flex items-center gap-x-2">
+                    <RadioGroup.Item
+                      value="category_id"
+                      id="parent-ref-category-id"
+                    />
+                    <Label htmlFor="parent-ref-category-id" weight="plus">
+                      Parent Category Id
+                    </Label>
+                  </div>
+                  <Text size="small" className="text-ui-fg-subtle pl-6">
+                    Best for updates from an export. Uses a stable parent id.
+                  </Text>
+                </RadioGroup>
+              </div>
+            </div>
+          )}
+
           <input
             type="file"
             accept=".csv,text/csv"
@@ -405,7 +568,7 @@ const EntityPanel = ({
           )}
 
           <div className="flex flex-wrap gap-2">
-            {entity === "products" && (
+            {requiresVerify && (
               <Button
                 size="small"
                 variant="secondary"
@@ -422,7 +585,8 @@ const EntityPanel = ({
               onClick={handleImport}
               disabled={
                 !file ||
-                (entity === "products" && !verifySummary)
+                (requiresVerify && !verifySummary) ||
+                Boolean(categoryHasErrors)
               }
               isLoading={isImporting}
             >
@@ -437,7 +601,48 @@ const EntityPanel = ({
             <Heading level="h3" className="mb-2">
               Verify result
             </Heading>
-            {isCreateVerifySummary(verifySummary) ? (
+            {isCategoryVerifySummary(verifySummary) ? (
+              <>
+                <div className="flex flex-wrap gap-2">
+                  {verifySummary.mode === "create" ? (
+                    <Badge color="green">
+                      Would create: {verifySummary.would_create}
+                    </Badge>
+                  ) : (
+                    <Badge color="blue">
+                      Would update: {verifySummary.would_update}
+                    </Badge>
+                  )}
+                  <Badge color="grey">Rows: {verifySummary.rows}</Badge>
+                  {verifySummary.not_found > 0 && (
+                    <Badge color="orange">
+                      Not found: {verifySummary.not_found}
+                    </Badge>
+                  )}
+                  {verifySummary.conflicts > 0 && (
+                    <Badge color="orange">
+                      Conflicts: {verifySummary.conflicts}
+                    </Badge>
+                  )}
+                  {verifySummary.missing_parent > 0 && (
+                    <Badge color="orange">
+                      Missing parent: {verifySummary.missing_parent}
+                    </Badge>
+                  )}
+                  {verifySummary.invalid > 0 && (
+                    <Badge color="red">
+                      Invalid rows: {verifySummary.invalid}
+                    </Badge>
+                  )}
+                </div>
+                <Text size="small" className="text-ui-fg-subtle mt-2">
+                  Parent method:{" "}
+                  {verifySummary.parent_reference_type === "seo_url"
+                    ? "Parent SEO URL"
+                    : "Parent Category Id"}
+                </Text>
+              </>
+            ) : isProductCreateVerifySummary(verifySummary) ? (
               <>
                 <div className="flex flex-wrap gap-2">
                   <Badge color="green">
@@ -492,18 +697,22 @@ const EntityPanel = ({
                 {verifySummary.samples.map((sample, index) => (
                   <Text
                     key={
-                      isCreateVerifySummary(verifySummary)
-                        ? `${sample.handle}-${sample.sku}-${index}`
-                        : sample.id
+                      isCategoryVerifySummary(verifySummary)
+                        ? `${sample.handle}-${sample.action}-${index}`
+                        : isProductCreateVerifySummary(verifySummary)
+                          ? `${sample.handle}-${sample.sku}-${index}`
+                          : sample.id
                     }
                     size="small"
                     className="text-ui-fg-subtle"
                   >
-                    {isCreateVerifySummary(verifySummary)
-                      ? `${sample.title || sample.handle} · SKU ${sample.sku}`
-                      : `${sample.title || sample.id}${
-                          sample.handle ? ` (/ ${sample.handle})` : ""
-                        }${sample.status ? ` · ${sample.status}` : ""}`}
+                    {isCategoryVerifySummary(verifySummary)
+                      ? `${sample.name} (/ ${sample.handle}) · ${sample.action}`
+                      : isProductCreateVerifySummary(verifySummary)
+                        ? `${sample.title || sample.handle} · SKU ${sample.sku}`
+                        : `${sample.title || sample.id}${
+                            sample.handle ? ` (/ ${sample.handle})` : ""
+                          }${sample.status ? ` · ${sample.status}` : ""}`}
                   </Text>
                 ))}
               </div>
@@ -593,7 +802,7 @@ const ImportExportPage = () => {
           <EntityPanel
             entity="categories"
             title="Categories"
-            description="Insert or update categories by handle. Parent categories can be linked using the parent handle column."
+            description="Choose create or update, select parent SEO URL or parent category id, verify the file, then import."
           />
         </Tabs.Content>
 

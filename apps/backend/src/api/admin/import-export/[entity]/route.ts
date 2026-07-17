@@ -8,10 +8,22 @@ import ImportExportModuleService from "../../../../modules/import-export/service
 import { IMPORT_EXPORT_MODULE } from "../../../../modules/import-export"
 import { isImportExportEntity } from "../../../../modules/import-export/templates"
 import {
+  isCategoryImportMode,
+  isCategoryParentReferenceType,
   isProductImportMode,
   isProductUpdateField,
   type ProductUpdateField,
 } from "../../../../modules/import-export/types"
+
+function parseDryRun(body: Record<string, unknown>): boolean {
+  const dryRunRaw = body.dry_run ?? body.verify
+  return (
+    dryRunRaw === true ||
+    dryRunRaw === "true" ||
+    dryRunRaw === "1" ||
+    dryRunRaw === "on"
+  )
+}
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const { entity } = req.params
@@ -59,18 +71,53 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     IMPORT_EXPORT_MODULE
   )
   const fileContent = file.buffer.toString("utf-8")
+  const body = (req.body ?? {}) as Record<string, unknown>
+  const dry_run = parseDryRun(body)
 
   if (entity === "categories") {
-    const summary = await service.importCategories(req.scope, fileContent)
+    const modeRaw = body.mode
+    if (!isCategoryImportMode(modeRaw)) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        "Category import mode must be create or update"
+      )
+    }
+
+    const parentReferenceRaw = body.parent_reference_type
+    const parent_reference_type = isCategoryParentReferenceType(
+      parentReferenceRaw
+    )
+      ? parentReferenceRaw
+      : modeRaw === "create"
+        ? "seo_url"
+        : "category_id"
+
+    const outcome = await service.importCategories(req.scope, fileContent, {
+      mode: modeRaw,
+      parent_reference_type,
+      dry_run,
+    })
+
+    if (outcome.kind === "verify") {
+      res.status(200).json({
+        entity,
+        mode: modeRaw,
+        parent_reference_type,
+        verified: true,
+        summary: outcome.summary,
+      })
+      return
+    }
 
     res.status(200).json({
       entity,
-      summary,
+      mode: modeRaw,
+      parent_reference_type,
+      summary: outcome.summary,
     })
     return
   }
 
-  const body = (req.body ?? {}) as Record<string, unknown>
   const modeRaw = body.mode
   const mode = isProductImportMode(modeRaw) ? modeRaw : "update"
 
@@ -88,13 +135,6 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       "Select at least one field to update"
     )
   }
-
-  const dryRunRaw = body.dry_run ?? body.verify
-  const dry_run =
-    dryRunRaw === true ||
-    dryRunRaw === "true" ||
-    dryRunRaw === "1" ||
-    dryRunRaw === "on"
 
   const outcome = await service.importProducts(req.scope, fileContent, {
     mode,
