@@ -29,9 +29,19 @@ class FeaturedProductsModuleService extends MedusaService({
   FeaturedSettings,
 }) {
   async getSettings(): Promise<FeaturedSettingsDTO> {
-    const existing = await this.listFeaturedSettings(
+    // Prefer the known singleton id, otherwise reuse the oldest row.
+    const byDefaultId = await this.listFeaturedSettings(
       { id: DEFAULT_SETTINGS_ID },
       { take: 1 }
+    )
+
+    if (byDefaultId.length) {
+      return byDefaultId[0] as FeaturedSettingsDTO
+    }
+
+    const existing = await this.listFeaturedSettings(
+      {},
+      { take: 1, order: { created_at: "ASC" } }
     )
 
     if (existing.length) {
@@ -51,7 +61,7 @@ class FeaturedProductsModuleService extends MedusaService({
   async updateSettings(
     input: UpdateFeaturedSettingsInput
   ): Promise<FeaturedSettingsDTO> {
-    await this.getSettings()
+    const current = await this.getSettings()
 
     if (input.max_items !== undefined) {
       if (!Number.isInteger(input.max_items) || input.max_items < 1) {
@@ -64,7 +74,7 @@ class FeaturedProductsModuleService extends MedusaService({
 
     const [updated] = await this.updateFeaturedSettings([
       {
-        id: DEFAULT_SETTINGS_ID,
+        id: current.id,
         ...input,
       },
     ])
@@ -270,15 +280,30 @@ class FeaturedProductsModuleService extends MedusaService({
     const query = container.resolve(ContainerRegistrationKeys.QUERY)
     const productIds = items.map((item) => item.product_id)
 
-    const context = regionId
-      ? {
-          variants: {
-            calculated_price: QueryContext({
-              region_id: regionId,
-            }),
-          },
-        }
-      : undefined
+    let currencyCode: string | undefined
+
+    if (regionId) {
+      const { data: regions } = await query.graph({
+        entity: "region",
+        fields: ["id", "currency_code"],
+        filters: { id: regionId },
+      })
+
+      currencyCode = (regions?.[0] as { currency_code?: string } | undefined)
+        ?.currency_code
+    }
+
+    const context =
+      regionId && currencyCode
+        ? {
+            variants: {
+              calculated_price: QueryContext({
+                region_id: regionId,
+                currency_code: currencyCode,
+              }),
+            },
+          }
+        : undefined
 
     const { data: products } = await query.graph({
       entity: "product",

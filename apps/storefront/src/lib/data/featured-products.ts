@@ -2,7 +2,6 @@
 
 import { sdk } from "@lib/config"
 import { getRegion } from "@lib/data/regions"
-import { getCacheOptions } from "@lib/data/cookies"
 import { HttpTypes } from "@medusajs/types"
 
 export type FeaturedProductsPayload = {
@@ -24,18 +23,20 @@ export async function getFeaturedProducts({
     return null
   }
 
-  const next = {
-    ...(await getCacheOptions("featured-products")),
+  try {
+    return await sdk.client.fetch<FeaturedProductsPayload>(
+      "/store/featured-products",
+      {
+        method: "GET",
+        query: {
+          region_id: region.id,
+        },
+        // Admin settings change often — avoid serving a stale homepage payload.
+        cache: "no-store",
+      }
+    )
+  } catch (error) {
+    console.error("Failed to load featured products", error)
+    return null
   }
-
-  return sdk.client
-    .fetch<FeaturedProductsPayload>("/store/featured-products", {
-      method: "GET",
-      query: {
-        region_id: region.id,
-      },
-      next,
-      cache: "force-cache",
-    })
-    .catch(() => null)
 }

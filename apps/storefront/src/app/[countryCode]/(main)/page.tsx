@@ -1,9 +1,8 @@
 import { Metadata } from "next"
 
-import FeaturedProducts from "@modules/home/components/featured-products"
-import { getFeaturedProducts } from "@lib/data/featured-products"
 import { getRegion } from "@lib/data/regions"
 import Banner from "@modules/common/components/banner"
+import FeaturedProducts from "@modules/products/components/featured-products"
 import Image from "next/image"
 import Link from "next/link"
 
@@ -21,7 +20,6 @@ export default async function Home(props: {
   const { countryCode } = params
 
   const region = await getRegion(countryCode)
-  const featured = await getFeaturedProducts({ countryCode })
 
   if (!region) {
     return null
@@ -104,23 +102,7 @@ export default async function Home(props: {
 
       </div>
 
-
-    {/* initial display of products */}
-      <div className="bg-white w-full">
-        <div className="content-container py-10">
-          <p className="text-2xl font-bold text-[#045a9c]" >Great Value Across Your Everyday Essentials</p>
-          <p className="text-sm text-ui-fg-muted">Enjoy everyday savings across products, prescriptions and pharmacy services.</p>
-        </div>
-
-        {featured?.enabled && featured.products.length > 0 ? (
-          <FeaturedProducts
-            title={featured.title}
-            subtitle={featured.subtitle}
-            products={featured.products}
-            region={region}
-          />
-        ) : null}
-      </div>
+      <FeaturedProducts countryCode={countryCode} region={region} />
     </>
   )
 }
