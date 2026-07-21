@@ -4,6 +4,12 @@ import { listCategories } from "@lib/data/categories"
 import CartButton from "@modules/layout/components/cart-button"
 import HeaderNav from "@modules/layout/components/nav-menu"
 
+// Staging: set MEDUSA_STOREFRONT_NO_CACHE=true so nav/catalog skip Next.js fetch cache
+export const dynamic =
+  process.env.MEDUSA_STOREFRONT_NO_CACHE === "true"
+    ? "force-dynamic"
+    : "auto"
+
 export default async function Nav() {
   const productCategories = await listCategories({ limit: 500 })
 
