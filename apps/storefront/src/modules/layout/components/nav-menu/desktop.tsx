@@ -152,7 +152,7 @@ export default function NavMenuDesktop({ categories }: NavMenuDesktopProps) {
               {item.label === "PRODUCTS" && productsOpen && (
                 <FontAwesomeIcon
                   icon={faCaretUp}
-                  className="pointer-events-none absolute left-1/2 top-[32px] z-[60] -translate-x-1/2 text-white"
+                  className="pointer-events-none absolute left-1/2 top-[43px] z-[60] -translate-x-1/2 text-white"
                   size="xl"
                 />
               )}
@@ -172,7 +172,7 @@ export default function NavMenuDesktop({ categories }: NavMenuDesktopProps) {
 
       {productsOpen && (
         <div
-          className="fixed inset-x-0 z-50 bg-white text-black shadow-lg"
+          className="fixed inset-x-0 z-50 bg-white text-black shadow-lg mt-3"
           style={dropdownStyle}
         >
           <div className="flex items-stretch gap-x-0 h-full">
