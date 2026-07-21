@@ -1,12 +1,10 @@
 import { sdk } from "@lib/config"
 import { HttpTypes } from "@medusajs/types"
 import { getCacheOptions } from "./cookies"
-
-const bypassCatalogCache = () =>
-  process.env.MEDUSA_STOREFRONT_NO_CACHE === "true"
+import { bypassStorefrontCache } from "./cache"
 
 export const listCategories = async (query?: Record<string, unknown>) => {
-  const skipCache = bypassCatalogCache()
+  const skipCache = bypassStorefrontCache()
   const next = skipCache
     ? undefined
     : {
@@ -35,7 +33,7 @@ export const listCategories = async (query?: Record<string, unknown>) => {
 
 export const getCategoryByHandle = async (categoryHandle: string[]) => {
   const handle = `${categoryHandle.join("/")}`
-  const skipCache = bypassCatalogCache()
+  const skipCache = bypassStorefrontCache()
   const next = skipCache
     ? undefined
     : {
