@@ -30,6 +30,7 @@ export default async function FeaturedProducts({
         <FeaturedProductsSection
           products={featured.products}
           region={region}
+          countryCode={countryCode}
         />
       </div>
     )

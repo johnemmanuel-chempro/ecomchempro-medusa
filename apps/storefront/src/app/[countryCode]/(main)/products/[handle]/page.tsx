@@ -56,7 +56,13 @@ function getImagesForVariant(
   product: HttpTypes.StoreProduct,
   selectedVariantId?: string
 ) {
-  if (!selectedVariantId || !product.variants) {
+
+  //Cannot read properties of undefined (reading 'variants')
+  if(!product || !product.variants){
+    return null
+  }
+
+  if ( !selectedVariantId || !product.variants) {
     return product.images
   }
 
