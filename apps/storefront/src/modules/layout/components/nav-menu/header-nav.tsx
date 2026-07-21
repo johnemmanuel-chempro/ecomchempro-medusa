@@ -111,7 +111,7 @@ export default function HeaderNav({ categories, cart }: HeaderNavProps) {
         </div>
       </nav>
 
-      <div className="hidden small:block border-y border-[#26a1da]">
+      <div className="hidden small:block border-y border-[#3ca7d9] shadow-md">
         <div className="content-container relative py-4">
           <NavMenuDesktop categories={categories} />
         </div>

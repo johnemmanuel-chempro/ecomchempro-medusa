@@ -45,7 +45,7 @@ export default async function ProductPreview({
 
   return (
     <div
-      className="flex h-full flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white"
+      className="flex h-full flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-md"
       data-testid="product-wrapper"
     >
       <div className="relative bg-white">
