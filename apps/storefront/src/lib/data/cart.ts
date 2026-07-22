@@ -1,7 +1,7 @@
 "use server"
 
 import { sdk } from "@lib/config"
-import medusaError from "@lib/util/medusa-error"
+import medusaError, { getMedusaErrorMessage } from "@lib/util/medusa-error"
 import { HttpTypes } from "@medusajs/types"
 import { revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
@@ -108,12 +108,7 @@ export async function updateCart(data: HttpTypes.StoreUpdateCart) {
   return sdk.store.cart
     .update(cartId, data, {}, headers)
     .then(async ({ cart }: { cart: HttpTypes.StoreCart }) => {
-      const cartCacheTag = await getCacheTag("carts")
-      revalidateTag(cartCacheTag)
-
-      const fulfillmentCacheTag = await getCacheTag("fulfillment")
-      revalidateTag(fulfillmentCacheTag)
-
+      await revalidateCartTags()
       return cart
     })
     .catch(medusaError)
@@ -188,27 +183,36 @@ export async function updateLineItem({
 }: {
   lineId: string
   quantity: number
-}) {
+}): Promise<{ success: true } | { success: false; error: string }> {
   if (!lineId) {
-    throw new Error("Missing lineItem ID when updating line item")
+    return { success: false, error: "Missing line item ID" }
   }
 
   const cartId = await getCartId()
 
   if (!cartId) {
-    throw new Error("Missing cart ID when updating line item")
+    return { success: false, error: "No cart found. Refresh and try again." }
   }
 
   const headers = {
     ...(await getAuthHeaders()),
   }
 
-  await sdk.store.cart
-    .updateLineItem(cartId, lineId, { quantity }, {}, headers)
-    .then(async () => {
-      await revalidateCartTags()
-    })
-    .catch(medusaError)
+  try {
+    await sdk.store.cart.updateLineItem(
+      cartId,
+      lineId,
+      { quantity },
+      {},
+      headers
+    )
+    await revalidateCartTags()
+    return { success: true }
+  } catch (error) {
+    console.error("updateLineItem failed", error)
+    // Return instead of throw — production Server Actions hide thrown messages.
+    return { success: false, error: getMedusaErrorMessage(error) }
+  }
 }
 
 export async function deleteLineItem(lineId: string) {
