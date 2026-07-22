@@ -21,8 +21,27 @@ export default async function Home(props: {
 
   const region = await getRegion(countryCode)
 
+  // No Medusa region for this country code (e.g. /au without an AU region in Admin).
+  // Returning null used to render a blank page under the layout.
   if (!region) {
-    return null
+    return (
+      <div className="content-container py-16">
+        <h1 className="text-xl font-semibold text-[#045a9c]">
+          Store region unavailable
+        </h1>
+        <p className="mt-2 text-sm text-ui-fg-muted max-w-xl">
+          No Medusa region is configured for{" "}
+          <span className="font-semibold uppercase">{countryCode}</span>. Create
+          a region in Admin that includes this country (and the matching
+          currency, e.g. AUD for Australia), then refresh. Until then, try a
+          country that exists on your backend (for example{" "}
+          <a className="text-[#045a9c] underline" href="/dk">
+            /dk
+          </a>
+          ).
+        </p>
+      </div>
+    )
   }
 
   return (

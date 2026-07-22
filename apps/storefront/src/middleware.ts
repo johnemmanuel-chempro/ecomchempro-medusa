@@ -51,7 +51,10 @@ async function getRegionMap(cacheId: string) {
     // Create a map of country codes to regions.
     regions.forEach((region: HttpTypes.StoreRegion) => {
       region.countries?.forEach((c) => {
-        regionMapCache.regionMap.set(c.iso_2 ?? "", region)
+        const code = (c.iso_2 ?? "").toLowerCase()
+        if (code) {
+          regionMapCache.regionMap.set(code, region)
+        }
       })
     })
 
@@ -111,12 +114,15 @@ export async function middleware(request: NextRequest) {
   const regionMap = await getRegionMap(cacheId)
   const countryCode = await getCountryCode(request, regionMap)
 
-  // if the country code is available, use it, otherwise use the default region
-  const country = countryCode || DEFAULT_REGION
+  // Prefer a country that actually exists in Medusa regions.
+  const country = (countryCode || DEFAULT_REGION).toLowerCase()
   const firstPathSegment = request.nextUrl.pathname.split("/")[1]?.toLowerCase()
-  const urlHasCountry = firstPathSegment === country.toLowerCase()
+  const urlCountryIsValid =
+    Boolean(firstPathSegment) && regionMap.has(firstPathSegment)
 
-  if (urlHasCountry) {
+  // Allow the request only when the URL country exists in Medusa.
+  // Do not treat DEFAULT_REGION as valid if it was never configured.
+  if (urlCountryIsValid) {
     if (!cacheIdCookie) {
       const response = NextResponse.next()
       response.cookies.set("_medusa_cache_id", cacheId, {
@@ -127,11 +133,23 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  // if the url doesn't have the country, redirect to it
-  const redirectPath =
-    request.nextUrl.pathname === "/" ? "" : request.nextUrl.pathname
+  // Invalid or missing country prefix → redirect to a real region country.
+  const fallbackCountry = regionMap.has(country)
+    ? country
+    : regionMap.keys().next().value || country
+
+  const segments = request.nextUrl.pathname.split("/").filter(Boolean)
+  const restSegments =
+    segments.length && regionMap.has(segments[0].toLowerCase())
+      ? segments.slice(1)
+      : // drop unknown first segment if it looks like a country code
+        segments.length && segments[0].length === 2
+          ? segments.slice(1)
+          : segments
+
+  const redirectPath = restSegments.length ? `/${restSegments.join("/")}` : ""
   const queryString = request.nextUrl.search || ""
-  const redirectUrl = `${request.nextUrl.origin}/${country}${redirectPath}${queryString}`
+  const redirectUrl = `${request.nextUrl.origin}/${fallbackCountry}${redirectPath}${queryString}`
 
   return NextResponse.redirect(redirectUrl, 307)
 }
