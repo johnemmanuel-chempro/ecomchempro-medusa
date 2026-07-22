@@ -1,6 +1,7 @@
 import { Metadata } from "next"
 import { notFound } from "next/navigation"
 
+import { shouldGenerateStaticParams } from "@lib/data/cache"
 import { getCategoryByHandle, listCategories } from "@lib/data/categories"
 import { listRegions } from "@lib/data/regions"
 import { HttpTypes, StoreRegion } from "@medusajs/types"
@@ -18,7 +19,7 @@ type Props = {
 export async function generateStaticParams() {
   // Skip heavy prerender on staging/free deploys — pages render on demand instead.
   // Also avoids build failures when the Medusa backend is asleep on Render.
-  if (process.env.MEDUSA_STOREFRONT_NO_CACHE === "true") {
+  if (!shouldGenerateStaticParams()) {
     return []
   }
 

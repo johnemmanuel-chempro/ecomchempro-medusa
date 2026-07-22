@@ -1,5 +1,6 @@
 import { Metadata } from "next"
 import { notFound } from "next/navigation"
+import { shouldGenerateStaticParams } from "@lib/data/cache"
 import { listProducts } from "@lib/data/products"
 import { getRegion, listRegions } from "@lib/data/regions"
 import ProductTemplate from "@modules/products/templates"
@@ -11,7 +12,8 @@ type Props = {
 }
 
 export async function generateStaticParams() {
-  if (process.env.MEDUSA_STOREFRONT_NO_CACHE === "true") {
+  // Skip catalog SSG on Render / staging — avoids 60s build timeouts.
+  if (!shouldGenerateStaticParams()) {
     return []
   }
 

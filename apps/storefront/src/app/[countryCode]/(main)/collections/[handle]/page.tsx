@@ -1,6 +1,7 @@
 import { Metadata } from "next"
 import { notFound } from "next/navigation"
 
+import { shouldGenerateStaticParams } from "@lib/data/cache"
 import { getCollectionByHandle, listCollections } from "@lib/data/collections"
 import { listRegions } from "@lib/data/regions"
 import { StoreCollection, StoreRegion } from "@medusajs/types"
@@ -18,7 +19,7 @@ type Props = {
 export const PRODUCT_LIMIT = 12
 
 export async function generateStaticParams() {
-  if (process.env.MEDUSA_STOREFRONT_NO_CACHE === "true") {
+  if (!shouldGenerateStaticParams()) {
     return []
   }
 
