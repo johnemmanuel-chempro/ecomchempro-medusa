@@ -3,31 +3,40 @@
 import { sdk } from "@lib/config"
 import { HttpTypes } from "@medusajs/types"
 import { getCacheOptions } from "./cookies"
+import { bypassStorefrontCache } from "./cache"
 
 export const listRegions = async () => {
-  const next = {
-    ...(await getCacheOptions("regions")),
-  }
+  const skipCache = bypassStorefrontCache()
+  const next = skipCache
+    ? undefined
+    : {
+        ...(await getCacheOptions("regions")),
+        revalidate: 3600,
+      }
 
   return await sdk.client
     .fetch<{ regions: HttpTypes.StoreRegion[] }>(`/store/regions`, {
       method: "GET",
       next,
-      cache: "force-cache",
+      cache: skipCache ? "no-store" : "force-cache",
     })
     .then(({ regions }) => regions)
 }
 
 export const retrieveRegion = async (id: string) => {
-  const next = {
-    ...(await getCacheOptions(["regions", id].join("-"))),
-  }
+  const skipCache = bypassStorefrontCache()
+  const next = skipCache
+    ? undefined
+    : {
+        ...(await getCacheOptions(["regions", id].join("-"))),
+        revalidate: 3600,
+      }
 
   return await sdk.client
     .fetch<{ region: HttpTypes.StoreRegion }>(`/store/regions/${id}`, {
       method: "GET",
       next,
-      cache: "force-cache",
+      cache: skipCache ? "no-store" : "force-cache",
     })
     .then(({ region }) => region)
 }
@@ -35,8 +44,11 @@ export const retrieveRegion = async (id: string) => {
 const regionMap = new Map<string, HttpTypes.StoreRegion>()
 
 export const getRegion = async (countryCode: string) => {
-  if (regionMap.has(countryCode)) {
-    return regionMap.get(countryCode)
+  const code = countryCode?.toLowerCase()
+
+  // Don't reuse in-memory map across requests when bypassing cache (staging)
+  if (!bypassStorefrontCache() && code && regionMap.has(code)) {
+    return regionMap.get(code)
   }
 
   const regions = await listRegions()
@@ -45,18 +57,18 @@ export const getRegion = async (countryCode: string) => {
     return null
   }
 
+  if (bypassStorefrontCache()) {
+    regionMap.clear()
+  }
+
   regions.forEach((region) => {
     region.countries?.forEach((c) => {
-      const code = (c?.iso_2 ?? "").toLowerCase()
-      if (code) {
-        regionMap.set(code, region)
+      const iso = (c?.iso_2 ?? "").toLowerCase()
+      if (iso) {
+        regionMap.set(iso, region)
       }
     })
   })
 
-  const region = countryCode
-    ? regionMap.get(countryCode.toLowerCase())
-    : regionMap.get("us")
-
-  return region ?? null
+  return code ? (regionMap.get(code) ?? null) : (regionMap.get("us") ?? null)
 }
