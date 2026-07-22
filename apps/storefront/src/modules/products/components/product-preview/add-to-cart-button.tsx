@@ -30,6 +30,8 @@ export default function AddToCartButton({
         quantity: 1,
         countryCode,
       })
+    } catch (error) {
+      console.error("Add to cart failed", error)
     } finally {
       setIsAdding(false)
     }
