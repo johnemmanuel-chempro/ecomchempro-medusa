@@ -134,7 +134,7 @@ export async function addToCart({
 
   const cart = await getOrSetCart(countryCode)
 
-  if (!cart) {
+  if (!cart?.id) {
     throw new Error("Error retrieving or creating cart")
   }
 
@@ -142,20 +142,23 @@ export async function addToCart({
     ...(await getAuthHeaders()),
   }
 
-  // Always re-fetch with line items so a 2nd add updates qty instead of failing.
-  const freshCart = await retrieveCart(
-    cart.id,
-    "*items,*items.variant,id,region_id"
-  )
+  // Fresh cart with line items — required so a 2nd click updates qty.
+  const freshCart =
+    (await retrieveCart(cart.id)) ||
+    (await retrieveCart(undefined, "*items,*items.variant,id,region_id"))
 
-  const existingItem = freshCart?.items?.find(
+  if (!freshCart?.id) {
+    throw new Error("Could not load cart for update")
+  }
+
+  const existingItem = freshCart.items?.find(
     (item) => item.variant_id === variantId || item.variant?.id === variantId
   )
 
   try {
     if (existingItem?.id) {
       await sdk.store.cart.updateLineItem(
-        cart.id,
+        freshCart.id,
         existingItem.id,
         { quantity: (existingItem.quantity || 0) + quantity },
         {},
@@ -163,7 +166,7 @@ export async function addToCart({
       )
     } else {
       await sdk.store.cart.createLineItem(
-        cart.id,
+        freshCart.id,
         {
           variant_id: variantId,
           quantity,
