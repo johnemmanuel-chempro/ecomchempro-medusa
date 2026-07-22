@@ -16,30 +16,48 @@ type Props = {
 }
 
 export async function generateStaticParams() {
-  const product_categories = await listCategories()
-
-  if (!product_categories) {
+  // Skip heavy prerender on staging/free deploys — pages render on demand instead.
+  // Also avoids build failures when the Medusa backend is asleep on Render.
+  if (process.env.MEDUSA_STOREFRONT_NO_CACHE === "true") {
     return []
   }
 
-  const countryCodes = await listRegions().then((regions: StoreRegion[]) =>
-    regions?.map((r) => r.countries?.map((c) => c.iso_2)).flat()
-  )
+  try {
+    const product_categories = await listCategories()
 
-  const categoryHandles = product_categories.map(
-    (category: HttpTypes.StoreProductCategory) => category.handle
-  )
+    if (!product_categories?.length) {
+      return []
+    }
 
-  const staticParams = countryCodes
-    ?.map((countryCode: string | undefined) =>
-      categoryHandles.map((handle: string) => ({
+    const countryCodes = await listRegions().then((regions: StoreRegion[]) =>
+      regions
+        ?.map((r) => r.countries?.map((c) => c.iso_2?.toLowerCase()))
+        .flat()
+        .filter(Boolean) as string[]
+    )
+
+    if (!countryCodes?.length) {
+      return []
+    }
+
+    const categoryHandles = product_categories
+      .map((category: HttpTypes.StoreProductCategory) => category.handle)
+      .filter(Boolean)
+
+    return countryCodes.flatMap((countryCode) =>
+      categoryHandles.map((handle) => ({
         countryCode,
-        category: [handle],
+        category: [handle!],
       }))
     )
-    .flat()
-
-  return staticParams
+  } catch (error) {
+    console.error(
+      `Failed to generate static paths for category pages: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }.`
+    )
+    return []
+  }
 }
 
 export async function generateMetadata(props: Props): Promise<Metadata> {

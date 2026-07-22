@@ -18,36 +18,49 @@ type Props = {
 export const PRODUCT_LIMIT = 12
 
 export async function generateStaticParams() {
-  const { collections } = await listCollections({
-    fields: "*products",
-  })
-
-  if (!collections) {
+  if (process.env.MEDUSA_STOREFRONT_NO_CACHE === "true") {
     return []
   }
 
-  const countryCodes = await listRegions().then(
-    (regions: StoreRegion[]) =>
-      regions
-        ?.map((r) => r.countries?.map((c) => c.iso_2))
-        .flat()
-        .filter(Boolean) as string[]
-  )
+  try {
+    const { collections } = await listCollections({
+      fields: "*products",
+    })
 
-  const collectionHandles = collections.map(
-    (collection: StoreCollection) => collection.handle
-  )
+    if (!collections?.length) {
+      return []
+    }
 
-  const staticParams = countryCodes
-    ?.map((countryCode: string) =>
-      collectionHandles.map((handle: string | undefined) => ({
+    const countryCodes = await listRegions().then(
+      (regions: StoreRegion[]) =>
+        regions
+          ?.map((r) => r.countries?.map((c) => c.iso_2?.toLowerCase()))
+          .flat()
+          .filter(Boolean) as string[]
+    )
+
+    if (!countryCodes?.length) {
+      return []
+    }
+
+    const collectionHandles = collections
+      .map((collection: StoreCollection) => collection.handle)
+      .filter(Boolean)
+
+    return countryCodes.flatMap((countryCode: string) =>
+      collectionHandles.map((handle) => ({
         countryCode,
         handle,
       }))
     )
-    .flat()
-
-  return staticParams
+  } catch (error) {
+    console.error(
+      `Failed to generate static paths for collection pages: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }.`
+    )
+    return []
+  }
 }
 
 export async function generateMetadata(props: Props): Promise<Metadata> {

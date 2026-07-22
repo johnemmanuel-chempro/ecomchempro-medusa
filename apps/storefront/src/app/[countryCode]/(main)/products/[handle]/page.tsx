@@ -11,12 +11,19 @@ type Props = {
 }
 
 export async function generateStaticParams() {
+  if (process.env.MEDUSA_STOREFRONT_NO_CACHE === "true") {
+    return []
+  }
+
   try {
     const countryCodes = await listRegions().then((regions) =>
-      regions?.map((r) => r.countries?.map((c) => c.iso_2)).flat()
+      regions
+        ?.map((r) => r.countries?.map((c) => c.iso_2?.toLowerCase()))
+        .flat()
+        .filter(Boolean) as string[]
     )
 
-    if (!countryCodes) {
+    if (!countryCodes?.length) {
       return []
     }
 
