@@ -20,5 +20,9 @@ module.exports = defineConfig({
     {
       resolve: "./src/modules/featured-products",
     },
+
+    {
+      resolve: "./src/modules/banners",
+    },
   ],
 })

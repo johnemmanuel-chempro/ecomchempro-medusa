@@ -46,11 +46,7 @@ async function hydrateProductsWithStorePricing(
   )
 }
 
-export async function getFeaturedProducts({
-  countryCode,
-}: {
-  countryCode: string
-}): Promise<FeaturedProductsPayload | null> {
+export async function getFeaturedProducts({countryCode}: {countryCode: string}): Promise<FeaturedProductsPayload | null> {
   const region = await getRegion(countryCode)
 
   if (!region) {
