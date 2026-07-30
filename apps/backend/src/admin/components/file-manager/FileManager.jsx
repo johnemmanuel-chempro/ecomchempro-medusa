@@ -1379,7 +1379,7 @@ export default function FileManager({ mode = "page", onSelectFile }) {
                         return (
                         <ContextMenu.Root key={file.id}>
                             <ContextMenu.Trigger
-                                className={`hover:bg-ui-bg-subtle rounded-md p-3 cursor-pointer select-none ${
+                                className={`hover:bg-ui-bg-subtle rounded-md p-3 cursor-pointer select-none flex items-end ${
                                     isCutItem ? "opacity-40" : ""
                                 } ${
                                     isSelected
@@ -1389,21 +1389,23 @@ export default function FileManager({ mode = "page", onSelectFile }) {
                                 onClick={(e) => handleSelectItem(e, item)}
                                 onDoubleClick={() => handlePickFile(file)}
                             >
-                                {file.url && (
-                                    <img
-                                        src={file.url}
-                                        alt={file.alt || file.name}
-                                        style={{
-                                            maxWidth: "150px",
-                                            maxHeight: "100px",
-                                            objectFit: "contain",
-                                        }}
-                                    />
-                                )}
-                                <p className="text-sm font-medium text-ui-fg-subtle text-truncate">
-                                    {file.name}
-                                    {isCutItem ? " (cut)" : ""}
-                                </p>
+                                <div>
+                                    {file.url && (
+                                        <img
+                                            src={file.url}
+                                            alt={file.alt || file.name}
+                                            style={{
+                                                maxWidth: "150px",
+                                                maxHeight: "100px",
+                                                objectFit: "contain",
+                                            }}
+                                        />
+                                    )}
+                                    <p className="text-sm font-medium text-ui-fg-subtle text-truncate">
+                                        {file.name}
+                                        {isCutItem ? " (cut)" : ""}
+                                    </p>
+                                </div>
                             </ContextMenu.Trigger>
 
                             <ContextMenu.Portal>
