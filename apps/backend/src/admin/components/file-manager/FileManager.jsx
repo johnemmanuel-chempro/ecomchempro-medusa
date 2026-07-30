@@ -2,7 +2,7 @@ import { Container, Heading, Text, Button, Input, Label, FocusModal } from "@med
 import { adminFetch } from "../../lib/sdk"
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
-import { Folder, Trash2, Pencil, FolderOpen, FolderPlus, Eye, Info, Copy, ClipboardPaste, Scissors, Upload, ChevronRight, ChevronDown, Check } from "lucide-react"
+import { Folder, Trash2, Pencil, FolderOpen, FolderPlus, Eye, Info, Copy, ClipboardPaste, Scissors, Upload, ChevronRight, ChevronDown, Check, Link } from "lucide-react"
 import * as ContextMenu from "@radix-ui/react-context-menu"
 
 // mode: "page" = full File Manager page
@@ -335,6 +335,21 @@ export default function FileManager({ mode = "page", onSelectFile }) {
             onSelectFile(file)
         } else {
             startViewFile(file)
+        }
+    }
+
+    // copy the public image URL to clipboard
+    const handleCopyFileUrl = async (file) => {
+        if (!file?.url) {
+            showToast("This file has no URL", "error")
+            return
+        }
+
+        try {
+            await navigator.clipboard.writeText(file.url)
+            showToast("Image URL copied", "success")
+        } catch (error) {
+            showToast("Failed to copy URL", "error")
         }
     }
 
@@ -1403,6 +1418,13 @@ export default function FileManager({ mode = "page", onSelectFile }) {
                                         onSelect={() => startViewFile(file)}
                                     >
                                         <Eye size={16} /> View
+                                    </ContextMenu.Item>
+
+                                    <ContextMenu.Item
+                                        className="text-sm outline-none px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
+                                        onSelect={() => handleCopyFileUrl(file)}
+                                    >
+                                        <Link size={16} /> Copy URL
                                     </ContextMenu.Item>
 
                                     {isPicker && (

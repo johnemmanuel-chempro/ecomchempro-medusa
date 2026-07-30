@@ -16,6 +16,14 @@ const EntityPanel = ({ entity, title, description }) => {
     })
     const [banners, setBanners] = useState([])
 
+    // banner placement form
+    const [placementPostData, setPlacementPostData] = useState({
+        banner_id: "",
+        page_key: "",
+        is_active: true,
+    })
+    const [placements, setPlacements] = useState([])
+
     // how to set the image: "url" = type it, "file_manager" = pick from media
     const [imageSource, setImageSource] = useState("url")
 
@@ -70,6 +78,76 @@ const EntityPanel = ({ entity, title, description }) => {
         }
     }
 
+    const fetchPlacements = async () => {
+        try {
+            const response = await adminFetch("/admin/banner-placements", {
+                method: "GET",
+            })
+            setPlacements(response)
+        } catch (error) {
+            showToast("Failed to fetch banner placements", "error")
+        }
+    }
+
+    const resetPlacementForm = () => {
+        setPlacementPostData({
+            banner_id: "",
+            page_key: "",
+            is_active: true,
+        })
+    }
+
+    const handleCreatePlacement = async () => {
+        try {
+            if (!placementPostData.banner_id) {
+                showToast("Please select a banner", "error")
+                return
+            }
+
+            if (!placementPostData.page_key.trim()) {
+                showToast("Page URL is required", "error")
+                return
+            }
+
+            const response = await adminFetch("/admin/banner-placements", {
+                method: "POST",
+                body: {
+                    banner_id: placementPostData.banner_id,
+                    page_key: placementPostData.page_key.trim(),
+                    is_active: placementPostData.is_active,
+                },
+            })
+
+            if (response.id) {
+                showToast("Banner placement created successfully", "success")
+                resetPlacementForm()
+                fetchPlacements()
+            } else {
+                showToast(response.message || "Failed to create placement", "error")
+            }
+        } catch (error) {
+            showToast(error.message, "error")
+        }
+    }
+
+    const handleDeletePlacement = async (id) => {
+        try {
+            const response = await adminFetch(`/admin/banner-placements/${id}`, {
+                method: "DELETE",
+            })
+            showToast(response.message, "success")
+            fetchPlacements()
+        } catch (error) {
+            showToast(error.message, "error")
+        }
+    }
+
+    // find banner title by id (for the placements list)
+    const getBannerTitle = (bannerId) => {
+        const banner = banners.find((item) => item.id === bannerId)
+        return banner?.title || bannerId
+    }
+
     const handleDeleteBanner = async (id) => {
         try {
             const response = await adminFetch("/admin/banners/"+id, {
@@ -104,7 +182,10 @@ const EntityPanel = ({ entity, title, description }) => {
 
     useEffect(() => {
         fetchBanners()
-    }, [])
+        if (entity === "banner-placement") {
+            fetchPlacements()
+        }
+    }, [entity])
 
     const bannersContent = () => {
         return (
@@ -344,6 +425,136 @@ const EntityPanel = ({ entity, title, description }) => {
         </Container>)
     }
 
+    const bannerPlacementContent = () => {
+        return (
+            <Container className="p-6">
+                <Heading level="h2" className="mb-1">
+                    Create placement
+                </Heading>
+                <Text size="small" className="text-ui-fg-subtle mb-4">
+                    Choose a banner and set where it should appear on the storefront.
+                </Text>
+
+                <div className="flex flex-col gap-y-3 mb-4 max-w-xl">
+                    <div>
+                        <Label>Banner</Label>
+                        <select
+                            className="mt-1 w-full rounded-md border border-ui-border-base bg-ui-bg-field px-3 py-2 text-sm"
+                            value={placementPostData.banner_id}
+                            onChange={(e) =>
+                                setPlacementPostData({
+                                    ...placementPostData,
+                                    banner_id: e.target.value,
+                                })
+                            }
+                        >
+                            <option value="">Select a banner...</option>
+                            {banners.map((banner) => (
+                                <option key={banner.id} value={banner.id}>
+                                    {banner.title}
+                                    {banner.is_active ? "" : " (inactive)"}
+                                </option>
+                            ))}
+                        </select>
+                        {banners.length === 0 && (
+                            <Text size="small" className="text-ui-fg-subtle mt-1">
+                                No banners yet. Create a banner in the Banners tab first.
+                            </Text>
+                        )}
+                    </div>
+
+                    <div>
+                        <Label>Page URL</Label>
+                        <Input
+                            placeholder="e.g. / or /home or /products"
+                            value={placementPostData.page_key}
+                            onChange={(e) =>
+                                setPlacementPostData({
+                                    ...placementPostData,
+                                    page_key: e.target.value,
+                                })
+                            }
+                        />
+                        <Text size="small" className="text-ui-fg-subtle mt-1">
+                            Storefront path where this banner should show.
+                        </Text>
+                    </div>
+
+                    <div>
+                        <Label>Status</Label>
+                        <div className="flex h-8 items-center mt-1">
+                            <Switch
+                                checked={placementPostData.is_active}
+                                onCheckedChange={(checked) =>
+                                    setPlacementPostData((prev) => ({
+                                        ...prev,
+                                        is_active: checked,
+                                    }))
+                                }
+                            />
+                            <Text size="small" className="ml-2 text-ui-fg-subtle">
+                                {placementPostData.is_active ? "Active" : "Inactive"}
+                            </Text>
+                        </div>
+                    </div>
+                </div>
+
+                <Button variant="primary" onClick={handleCreatePlacement}>
+                    Create Placement
+                </Button>
+
+                <hr className="my-4" />
+
+                <div className="mb-3 flex items-center justify-between">
+                    <Heading level="h2">Existing placements</Heading>
+                    <Text size="small" className="text-ui-fg-subtle">
+                        {placements.length} placement
+                        {placements.length === 1 ? "" : "s"}
+                    </Text>
+                </div>
+
+                {placements.length === 0 && (
+                    <div className="rounded-md border border-dashed border-ui-border-base px-4 py-8 text-center">
+                        <Text className="text-ui-fg-subtle">
+                            No placements yet. Create one using the form above.
+                        </Text>
+                    </div>
+                )}
+
+                <div className="flex flex-col gap-y-3">
+                    {placements.map((item) => (
+                        <div
+                            key={item.id}
+                            className="flex flex-col gap-3 rounded-md border border-ui-border-base p-4 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                            <div className="min-w-0 flex flex-col gap-y-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Text weight="plus">
+                                        {getBannerTitle(item.banner_id)}
+                                    </Text>
+                                    <Badge color={item.is_active ? "green" : "grey"}>
+                                        {item.is_active ? "Active" : "Inactive"}
+                                    </Badge>
+                                </div>
+                                <Text size="small" className="text-ui-fg-subtle">
+                                    Page URL: {item.page_key}
+                                </Text>
+                            </div>
+
+                            <Button
+                                size="small"
+                                variant="danger"
+                                onClick={() => handleDeletePlacement(item.id)}
+                            >
+                                <Trash2 size={16} className="mr-1" /> Delete
+                            </Button>
+                        </div>
+                    ))}
+                </div>
+            </Container>
+        )
+    }
+
     return (
         <Container className=" p-0 divide-y">
             <div className="flex flex-col gap-y-2 px-6 py-4">
@@ -354,6 +565,9 @@ const EntityPanel = ({ entity, title, description }) => {
                 <div className="flex flex-wrap items-center gap-2"> 
                     {
                         entity == 'banners' && bannersContent()
+                    }
+                    {
+                        entity == 'banner-placement' && bannerPlacementContent()
                     }
                 </div>
             </div>

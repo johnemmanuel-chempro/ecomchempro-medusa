@@ -1,7 +1,14 @@
 import { MedusaService } from "@medusajs/framework/utils";
 import Banner from "./models/banner";
 import BannerPlacement from "./models/banner-placement";
-import { BannerDTO, CreateBannerInput, UpdateBannerInput } from "./types";
+import {
+    BannerDTO,
+    CreateBannerInput,
+    UpdateBannerInput,
+    CreateBannerPlacementInput,
+    UpdateBannerPlacementInput,
+    BannerPlacementDTO,
+} from "./types";
 
 class BannersModuleService extends MedusaService({
     Banner,
@@ -19,7 +26,7 @@ class BannersModuleService extends MedusaService({
 
     async getBanner(id: string): Promise<BannerDTO | null> {
         const [banner] = await this.listBanners({ id }, { take: 1 })
-        return (banner as BannerDTO) ?? []
+        return (banner as BannerDTO) ?? null
     }
 
     async getListBanners(): Promise<BannerDTO[]> {
@@ -36,6 +43,36 @@ class BannersModuleService extends MedusaService({
         await this.deleteBanners(id);
     }
 
+    // ---------- BANNER PLACEMENT ----------
+
+    async createBannerPlacement(
+        input: CreateBannerPlacementInput
+    ): Promise<CreateBannerPlacementInput> {
+        const placement = await this.createBannerPlacements(input);
+        return placement as CreateBannerPlacementInput;
+    }
+
+    async updateBannerPlacement(
+        id: string,
+        input: UpdateBannerPlacementInput
+    ): Promise<UpdateBannerPlacementInput> {
+        const placement = await this.updateBannerPlacements({ id, ...input });
+        return placement as UpdateBannerPlacementInput;
+    }
+
+    async getBannerPlacement(id: string): Promise<BannerPlacementDTO | null> {
+        const [placement] = await this.listBannerPlacements({ id }, { take: 1 });
+        return (placement as BannerPlacementDTO) ?? null;
+    }
+
+    async getListBannerPlacements(): Promise<BannerPlacementDTO[]> {
+        const placements = await this.listBannerPlacements({});
+        return placements as BannerPlacementDTO[];
+    }
+
+    async deleteBannerPlacement(id: string): Promise<void> {
+        await this.deleteBannerPlacements(id);
+    }
 }
 
 export default BannersModuleService;
