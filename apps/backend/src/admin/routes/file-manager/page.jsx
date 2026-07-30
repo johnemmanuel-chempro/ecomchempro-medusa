@@ -3,7 +3,7 @@ import { Container, Heading, Text, Button, Input, Label, FocusModal } from "@med
 import { adminFetch } from "../../lib/sdk"
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
-import { Folder, Trash2, Pencil, FolderOpen, Eye, Info } from "lucide-react"
+import { Folder, Trash2, Pencil, FolderOpen, FolderPlus, Eye, Info, Copy, ClipboardPaste, Scissors, Upload } from "lucide-react"
 import * as ContextMenu from "@radix-ui/react-context-menu"
 
 export default function FileManagerPage() {
@@ -18,10 +18,9 @@ export default function FileManagerPage() {
     const [createFolderOpen, setCreateFolderOpen] = useState(false)
     const [folderName, setFolderName] = useState("")
 
-    // upload form
+    // upload form (can select many images)
     const [uploadOpen, setUploadOpen] = useState(false)
-    const [selectedFile, setSelectedFile] = useState(null)
-    const [uploadName, setUploadName] = useState("")
+    const [selectedFiles, setSelectedFiles] = useState([])
 
     // rename panel: { type: "folder" | "file", id, name }
     const [renameTarget, setRenameTarget] = useState(null)
@@ -31,10 +30,94 @@ export default function FileManagerPage() {
     const [detailsFolder, setDetailsFolder] = useState(null)
     const [viewFile, setViewFile] = useState(null)
 
+    // multi-select: [{ type: "folder" | "file", id, name }]
+    // Ctrl/Cmd + click to add/remove from selection
+    const [selectedItems, setSelectedItems] = useState([])
+
+    // clipboard: { mode: "copy" | "cut", items: [{ type, id, name }] }
+    const [clipboard, setClipboard] = useState(null)
+
     const showToast = (message, type) => {
         toast[type](message, {
             position: "top-right",
         })
+    }
+
+    // convert bytes → readable size (KB / MB)
+    const formatFileSize = (bytes) => {
+        if (bytes === null || bytes === undefined) {
+            return ""
+        }
+
+        const mb = bytes / (1024 * 1024)
+        if (mb >= 1) {
+            return `${mb.toFixed(2)} MB`
+        }
+
+        const kb = bytes / 1024
+        if (kb >= 1) {
+            return `${kb.toFixed(1)} KB`
+        }
+
+        return `${bytes} B`
+    }
+
+    // clear selection when you open another folder
+    useEffect(() => {
+        setSelectedItems([])
+    }, [currentFolderId])
+
+    // Esc clears selection
+    useEffect(() => {
+        const onKeyDown = (e) => {
+            if (e.key === "Escape") {
+                setSelectedItems([])
+            }
+        }
+        window.addEventListener("keydown", onKeyDown)
+        return () => window.removeEventListener("keydown", onKeyDown)
+    }, [])
+
+    const isItemSelected = (type, id) => {
+        return selectedItems.some((item) => item.type === type && item.id === id)
+    }
+
+    const isItemCut = (type, id) => {
+        return (
+            clipboard?.mode === "cut" &&
+            clipboard.items.some((item) => item.type === type && item.id === id)
+        )
+    }
+
+    // click item: normal = select only this one, Ctrl/Cmd = toggle
+    const handleSelectItem = (e, item) => {
+        if (e.ctrlKey || e.metaKey) {
+            setSelectedItems((prev) => {
+                const exists = prev.some(
+                    (s) => s.type === item.type && s.id === item.id
+                )
+                if (exists) {
+                    return prev.filter(
+                        (s) => !(s.type === item.type && s.id === item.id)
+                    )
+                }
+                return [...prev, item]
+            })
+        } else {
+            setSelectedItems([item])
+        }
+    }
+
+    // if the clicked item is part of a multi-selection, act on all selected
+    // otherwise act on only the clicked item
+    const getItemsForAction = (clickedItem) => {
+        const inSelection = selectedItems.some(
+            (s) => s.type === clickedItem.type && s.id === clickedItem.id
+        )
+        if (inSelection && selectedItems.length > 1) {
+            return selectedItems
+        }
+        return [clickedItem]
     }
 
     const fetchContents = async () => {
@@ -91,16 +174,20 @@ export default function FileManagerPage() {
     }
 
     const handleUploadFile = async () => {
-        if (!selectedFile) {
-            showToast("Please choose an image file", "error")
+        if (!selectedFiles.length) {
+            showToast("Please choose at least one image file", "error")
             return
         }
 
         try {
             // FormData for file upload (do not use adminFetch JSON body)
             const formData = new FormData()
-            formData.append("file", selectedFile)
-            formData.append("name", uploadName || selectedFile.name)
+
+            // append every selected file under the same field name "files"
+            for (const file of selectedFiles) {
+                formData.append("files", file)
+            }
+
             if (currentFolderId) {
                 formData.append("folder_id", currentFolderId)
             }
@@ -117,7 +204,8 @@ export default function FileManagerPage() {
                 throw new Error(payload.message || "Failed to upload file")
             }
 
-            showToast("File uploaded successfully", "success")
+            const count = payload.count || selectedFiles.length
+            showToast(`Uploaded ${count} image(s) successfully`, "success")
             closeUploadModal()
             fetchContents()
         } catch (error) {
@@ -199,8 +287,7 @@ export default function FileManagerPage() {
 
     const closeUploadModal = () => {
         setUploadOpen(false)
-        setSelectedFile(null)
-        setUploadName("")
+        setSelectedFiles([])
         unlockPageClicks()
     }
 
@@ -266,35 +353,204 @@ export default function FileManagerPage() {
     }
 
     const handleDeleteFolder = async (id) => {
+        try {
+            const response = await adminFetch(`/admin/media/folders/${id}`, {
+                method: "DELETE",
+            })
+            return response
+        } catch (error) {
+            throw error
+        }
+    }
+
+    const handleDeleteFile = async (id) => {
+        try {
+            const response = await adminFetch(`/admin/media/files/${id}`, {
+                method: "DELETE",
+            })
+            return response
+        } catch (error) {
+            throw error
+        }
+    }
+
+    // ---------- COPY / CUT / PASTE / DELETE (supports many items) ----------
+
+    const handleCopyItems = (items) => {
+        setClipboard({
+            mode: "copy",
+            items,
+        })
+        setSelectedItems([])
+        showToast(`Copied ${items.length} item(s)`, "success")
+    }
+
+    const handleCutItems = (items) => {
+        setClipboard({
+            mode: "cut",
+            items,
+        })
+        setSelectedItems([])
+        showToast(`Cut ${items.length} item(s)`, "success")
+    }
+
+    const handleDeleteItems = async (items) => {
+        if (!items.length) {
+            return
+        }
+
         const ok = window.confirm(
-            "Delete this folder? It must be empty (no files or subfolders)."
+            `Delete ${items.length} selected item(s)?\nFolders must be empty to delete.`
         )
         if (!ok) {
             return
         }
 
-        try {
-            const response = await adminFetch(`/admin/media/folders/${id}`, {
-                method: "DELETE",
-            })
-            showToast(response.message, "success")
-            fetchContents()
-        } catch (error) {
-            showToast(error.message, "error")
+        let successCount = 0
+        let failCount = 0
+
+        // delete files first, then folders (easier to empty folders)
+        const filesToDelete = items.filter((item) => item.type === "file")
+        const foldersToDelete = items.filter((item) => item.type === "folder")
+
+        for (const item of filesToDelete) {
+            try {
+                await handleDeleteFile(item.id)
+                successCount += 1
+            } catch (error) {
+                failCount += 1
+                console.log(error)
+            }
         }
+
+        for (const item of foldersToDelete) {
+            try {
+                await handleDeleteFolder(item.id)
+                successCount += 1
+            } catch (error) {
+                failCount += 1
+                console.log(error)
+            }
+        }
+
+        setSelectedItems([])
+
+        if (failCount === 0) {
+            showToast(`Deleted ${successCount} item(s)`, "success")
+        } else {
+            showToast(
+                `Deleted ${successCount}, failed ${failCount} (folders may not be empty)`,
+                "error"
+            )
+        }
+
+        fetchContents()
     }
 
-    const handleDeleteFile = async (id) => {
-        const ok = window.confirm("Delete this image?")
-        if (!ok) {
+    const handlePaste = async (targetFolderId) => {
+        // if no folder id was passed (toolbar Paste button),
+        // use the folder we are currently looking at
+        // NOTE: do not use default params — Button onClick passes the click event
+        const destinationId =
+            typeof targetFolderId === "string" || targetFolderId === null
+                ? targetFolderId
+                : currentFolderId
+
+        if (!clipboard?.items?.length) {
+            showToast("Nothing to paste. Copy or Cut first.", "error")
             return
         }
 
+        // quick UI check: do not paste a folder into itself / inside itself
+        // (backend also blocks this)
+        const unsafeFolder = clipboard.items.find((item) => {
+            if (item.type !== "folder") {
+                return false
+            }
+            // paste into the same folder
+            if (item.id === destinationId) {
+                return true
+            }
+            // we are currently browsing inside this folder (breadcrumb)
+            if (folderPath.some((pathItem) => pathItem.id === item.id)) {
+                return true
+            }
+            if (currentFolderId === item.id) {
+                return true
+            }
+            return false
+        })
+
+        if (unsafeFolder) {
+            showToast(
+                `Cannot paste folder "${unsafeFolder.name}" inside itself`,
+                "error"
+            )
+            return
+        }
+
+        const isCut = clipboard.mode === "cut"
+        const folderUrl = isCut
+            ? "/admin/media/folders/move"
+            : "/admin/media/folders/copy"
+        const fileUrl = isCut
+            ? "/admin/media/files/move"
+            : "/admin/media/files/copy"
+
+        let successCount = 0
+        let failCount = 0
+        let firstError = ""
+
         try {
-            const response = await adminFetch(`/admin/media/files/${id}`, {
-                method: "DELETE",
-            })
-            showToast(response.message, "success")
+            for (const item of clipboard.items) {
+                try {
+                    if (item.type === "folder") {
+                        await adminFetch(folderUrl, {
+                            method: "POST",
+                            body: {
+                                source_id: item.id,
+                                parent_id: destinationId,
+                            },
+                        })
+                    } else {
+                        await adminFetch(fileUrl, {
+                            method: "POST",
+                            body: {
+                                source_id: item.id,
+                                folder_id: destinationId,
+                            },
+                        })
+                    }
+                    successCount += 1
+                } catch (error) {
+                    failCount += 1
+                    if (!firstError) {
+                        firstError = error.message || "Paste failed"
+                    }
+                    console.log(error)
+                }
+            }
+
+            // only clear cut clipboard when everything moved successfully
+            if (isCut && failCount === 0) {
+                setClipboard(null)
+            }
+
+            if (failCount === 0) {
+                showToast(
+                    isCut
+                        ? `Moved ${successCount} item(s)`
+                        : `Pasted ${successCount} item(s)`,
+                    "success"
+                )
+            } else {
+                showToast(
+                    firstError ||
+                        `Done ${successCount}, failed ${failCount}`,
+                    "error"
+                )
+            }
+
             fetchContents()
         } catch (error) {
             showToast(error.message, "error")
@@ -308,6 +564,7 @@ export default function FileManagerPage() {
         setRenameTarget(null)
         setDetailsFolder(null)
         setViewFile(null)
+        setSelectedItems([])
     }
 
     const goToRoot = () => {
@@ -327,44 +584,70 @@ export default function FileManagerPage() {
                 <div className="px-6 py-4">
                     <Heading level="h1">File Manager</Heading>
                     <Text size="small" className="text-ui-fg-subtle">
-                        Upload and organize images in folders. Right-click a folder or file for actions.
+                        Upload and organize images. Click to select, Ctrl/Cmd+click for multi-select, right-click for actions.
                     </Text>
                 </div>
             </Container>
 
             <Container className="p-6">
-                {/* Breadcrumb — shows nested path: Root / Parent / Child */}
-                <div className="mb-4 flex flex-wrap items-center gap-2">
-                    <Button variant="secondary" size="small" onClick={goToRoot}>
-                        Root
-                    </Button>
-                    {folderPath.map((item, index) => (
-                        <Button
-                            key={item.id}
-                            variant="secondary"
-                            size="small"
-                            onClick={() => goToBreadcrumb(index)}
-                        >
-                            / {item.name}
-                        </Button>
-                    ))}
-                </div>
+                
 
-                {/* Buttons open modals for create / upload */}
-                <div className="mb-4 flex flex-wrap gap-2">
+                {/* Buttons open modals for create / upload / paste */}
+                <div className="mb-4 flex flex-wrap items-center gap-2">
                     <Button
                         variant="secondary"
                         onClick={() => setCreateFolderOpen(true)}
                     >
-                        New Folder
+                        <FolderPlus size={16} className="" /> New Folder
                     </Button>
                     <Button
                         variant="primary"
                         onClick={() => setUploadOpen(true)}
                     >
-                        Upload Image
+                        <Upload size={16} className="" /> Upload Image
                     </Button>
+                    <Button
+                        variant="secondary"
+                        disabled={!clipboard?.items?.length}
+                        onClick={() => handlePaste()}
+                    >
+                        <ClipboardPaste size={16} className="" />
+                        Paste
+                        {clipboard?.items?.length
+                            ? ` (${clipboard.items.length})`
+                            : ""}
+                    </Button>
+
+                    {selectedItems.length > 0 && (
+                        <>
+                            <Button
+                                variant="secondary"
+                                onClick={() => setSelectedItems([])}
+                            >
+                                Clear selection
+                            </Button>
+                        </>
+                    )}
                 </div>
+
+                {(selectedItems.length > 0 || clipboard?.items?.length > 0) && (
+                    <Text size="small" className="text-ui-fg-subtle mb-4">
+                        {selectedItems.length > 0 && (
+                            <span>Selected: {selectedItems.length} item(s). </span>
+                        )}
+                        {clipboard?.items?.length > 0 && (
+                            <span>
+                                Clipboard ({clipboard.mode}):{" "}
+                                {clipboard.items.length} item(s)
+                                {clipboard.items.length === 1
+                                    ? ` — ${clipboard.items[0].name}`
+                                    : ""}
+                            </span>
+                        )}
+                    </Text>
+                )}
+
+                
 
                 {/* ---------- NEW FOLDER MODAL ---------- */}
                 <FocusModal
@@ -437,7 +720,7 @@ export default function FileManagerPage() {
                         }}
                     >
                         <FocusModal.Header>
-                            <Heading>Upload Image</Heading>
+                            <Heading>Upload Images</Heading>
                         </FocusModal.Header>
                         <FocusModal.Body className="flex flex-col gap-y-4 px-6 py-4">
                             <Text size="small" className="text-ui-fg-subtle">
@@ -449,32 +732,35 @@ export default function FileManagerPage() {
                                 </span>
                             </Text>
                             <div>
-                                <Label>Choose Image</Label>
+                                <Label>Choose Images (you can select many)</Label>
                                 <Input
                                     type="file"
+                                    multiple
                                     accept="image/jpeg,image/png,image/webp,image/gif"
                                     onChange={(e) => {
-                                        const file = e.target.files?.[0] || null
-                                        setSelectedFile(file)
-                                        if (file) {
-                                            setUploadName(file.name)
-                                        }
+                                        // convert FileList to a normal array
+                                        const list = e.target.files
+                                            ? Array.from(e.target.files)
+                                            : []
+                                        setSelectedFiles(list)
                                     }}
                                 />
                             </div>
-                            <div>
-                                <Label>File Name</Label>
-                                <Input
-                                    placeholder="Optional display name"
-                                    value={uploadName}
-                                    onChange={(e) => setUploadName(e.target.value)}
-                                />
-                            </div>
-                            {selectedFile && (
-                                <Text size="small" className="text-ui-fg-subtle">
-                                    Selected: {selectedFile.name} ({selectedFile.size}{" "}
-                                    bytes)
-                                </Text>
+                            {selectedFiles.length > 0 && (
+                                <div className="flex flex-col gap-y-1">
+                                    <Text size="small" className="font-medium">
+                                        Selected ({selectedFiles.length}):
+                                    </Text>
+                                    {selectedFiles.map((file, index) => (
+                                        <Text
+                                            key={`${file.name}-${index}`}
+                                            size="small"
+                                            className="text-ui-fg-subtle"
+                                        >
+                                            {file.name} ({formatFileSize(file.size)})
+                                        </Text>
+                                    ))}
+                                </div>
                             )}
                         </FocusModal.Body>
                         <FocusModal.Footer>
@@ -482,7 +768,8 @@ export default function FileManagerPage() {
                                 Cancel
                             </Button>
                             <Button variant="primary" onClick={handleUploadFile}>
-                                Upload Image
+                                Upload {selectedFiles.length || ""} Image
+                                {selectedFiles.length === 1 ? "" : "s"}
                             </Button>
                         </FocusModal.Footer>
                     </FocusModal.Content>
@@ -614,7 +901,7 @@ export default function FileManagerPage() {
                                 <span className="font-medium">Type:</span>{" "}
                                 {viewFile?.mime_type}{" "}
                                 <span className="font-medium">| Size:</span>{" "}
-                                {viewFile?.size} bytes
+                                {formatFileSize(viewFile?.size)}
                             </p>
                             {viewFile?.url && (
                                 <img
@@ -650,6 +937,23 @@ export default function FileManagerPage() {
 
                 <hr className="my-4" />
 
+                {/* Breadcrumb — shows nested path: Root / Parent / Child */}
+                <div className="mb-4 flex flex-wrap items-center gap-2">
+                    <Button variant="secondary" size="small" onClick={goToRoot}>
+                        Root
+                    </Button>
+                    {folderPath.map((item, index) => (
+                        <Button
+                            key={item.id}
+                            variant="secondary"
+                            size="small"
+                            onClick={() => goToBreadcrumb(index)}
+                        >
+                            / {item.name}
+                        </Button>
+                    ))}
+                </div>
+
                 <Heading level="h2" className="mb-2">
                     Files
                 </Heading>
@@ -662,15 +966,32 @@ export default function FileManagerPage() {
 
                 <div className="flex flex-wrap gap-x-2 gap-y-2">
                     {/* ---------- FOLDERS ---------- */}
-                    {folders.map((folder) => (
+                    {folders.map((folder) => {
+                        const item = {
+                            type: "folder",
+                            id: folder.id,
+                            name: folder.name,
+                        }
+                        const isSelected = isItemSelected("folder", folder.id)
+                        const isCutItem = isItemCut("folder", folder.id)
+
+                        return (
                         <ContextMenu.Root key={folder.id}>
                             <ContextMenu.Trigger
-                                className="hover:bg-ui-bg-subtle rounded-md p-5 cursor-pointer"
+                                className={`hover:bg-ui-bg-subtle rounded-md p-5 cursor-pointer select-none ${
+                                    isCutItem ? "opacity-40" : ""
+                                } ${
+                                    isSelected
+                                        ? "ring-2 ring-blue-500 bg-ui-bg-subtle"
+                                        : ""
+                                }`}
+                                onClick={(e) => handleSelectItem(e, item)}
                                 onDoubleClick={() => openFolder(folder)}
                             >
                                 <Folder size={70} />
-                                <p className="text-sm font-medium text-ui-fg-subtle mx-2">
+                                <p className="text-sm font-medium text-ui-fg-subtle">
                                     {folder.name}
+                                    {isCutItem ? " (cut)" : ""}
                                 </p>
                             </ContextMenu.Trigger>
 
@@ -703,24 +1024,79 @@ export default function FileManagerPage() {
                                         <Info size={16} /> Details
                                     </ContextMenu.Item>
 
+                                    <ContextMenu.Item
+                                        className="text-sm outline-none px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
+                                        onSelect={() =>
+                                            handleCopyItems(getItemsForAction(item))
+                                        }
+                                    >
+                                        <Copy size={16} /> Copy
+                                        {isSelected && selectedItems.length > 1
+                                            ? ` (${selectedItems.length})`
+                                            : ""}
+                                    </ContextMenu.Item>
+
+                                    <ContextMenu.Item
+                                        className="text-sm outline-none px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
+                                        onSelect={() =>
+                                            handleCutItems(getItemsForAction(item))
+                                        }
+                                    >
+                                        <Scissors size={16} /> Cut
+                                        {isSelected && selectedItems.length > 1
+                                            ? ` (${selectedItems.length})`
+                                            : ""}
+                                    </ContextMenu.Item>
+
+                                    {clipboard?.items?.length > 0 && (
+                                        <ContextMenu.Item
+                                            className="text-sm outline-none px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
+                                            onSelect={() => handlePaste(folder.id)}
+                                        >
+                                            <ClipboardPaste size={16} /> Paste inside
+                                        </ContextMenu.Item>
+                                    )}
+
                                     <ContextMenu.Separator className="h-px bg-gray-200" />
 
                                     <ContextMenu.Item
                                         className="text-sm outline-none px-4 py-2 text-red-500 hover:bg-red-50 cursor-pointer flex items-center gap-2"
-                                        onSelect={() => handleDeleteFolder(folder.id)}
+                                        onSelect={() =>
+                                            handleDeleteItems(getItemsForAction(item))
+                                        }
                                     >
                                         <Trash2 size={16} /> Delete
+                                        {isSelected && selectedItems.length > 1
+                                            ? ` (${selectedItems.length})`
+                                            : ""}
                                     </ContextMenu.Item>
                                 </ContextMenu.Content>
                             </ContextMenu.Portal>
                         </ContextMenu.Root>
-                    ))}
+                        )
+                    })}
 
                     {/* ---------- IMAGE FILES ---------- */}
-                    {files.map((file) => (
+                    {files.map((file) => {
+                        const item = {
+                            type: "file",
+                            id: file.id,
+                            name: file.name,
+                        }
+                        const isSelected = isItemSelected("file", file.id)
+                        const isCutItem = isItemCut("file", file.id)
+
+                        return (
                         <ContextMenu.Root key={file.id}>
                             <ContextMenu.Trigger
-                                className="hover:bg-ui-bg-subtle rounded-md p-3 cursor-pointer"
+                                className={`hover:bg-ui-bg-subtle rounded-md p-3 cursor-pointer select-none ${
+                                    isCutItem ? "opacity-40" : ""
+                                } ${
+                                    isSelected
+                                        ? "ring-2 ring-blue-500 bg-ui-bg-subtle"
+                                        : ""
+                                }`}
+                                onClick={(e) => handleSelectItem(e, item)}
                                 onDoubleClick={() => startViewFile(file)}
                             >
                                 {file.url && (
@@ -736,6 +1112,7 @@ export default function FileManagerPage() {
                                 )}
                                 <p className="text-sm font-medium text-ui-fg-subtle text-truncate">
                                     {file.name}
+                                    {isCutItem ? " (cut)" : ""}
                                 </p>
                             </ContextMenu.Trigger>
 
@@ -760,18 +1137,57 @@ export default function FileManagerPage() {
                                         <Pencil size={16} /> Rename
                                     </ContextMenu.Item>
 
+                                    <ContextMenu.Item
+                                        className="text-sm outline-none px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
+                                        onSelect={() =>
+                                            handleCopyItems(getItemsForAction(item))
+                                        }
+                                    >
+                                        <Copy size={16} /> Copy
+                                        {isSelected && selectedItems.length > 1
+                                            ? ` (${selectedItems.length})`
+                                            : ""}
+                                    </ContextMenu.Item>
+
+                                    <ContextMenu.Item
+                                        className="text-sm outline-none px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
+                                        onSelect={() =>
+                                            handleCutItems(getItemsForAction(item))
+                                        }
+                                    >
+                                        <Scissors size={16} /> Cut
+                                        {isSelected && selectedItems.length > 1
+                                            ? ` (${selectedItems.length})`
+                                            : ""}
+                                    </ContextMenu.Item>
+
+                                    {clipboard?.items?.length > 0 && (
+                                        <ContextMenu.Item
+                                            className="text-sm outline-none px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
+                                            onSelect={() => handlePaste()}
+                                        >
+                                            <ClipboardPaste size={16} /> Paste here
+                                        </ContextMenu.Item>
+                                    )}
+
                                     <ContextMenu.Separator className="h-px bg-gray-200" />
 
                                     <ContextMenu.Item
                                         className="text-sm outline-none px-4 py-2 text-red-500 hover:bg-red-50 cursor-pointer flex items-center gap-2"
-                                        onSelect={() => handleDeleteFile(file.id)}
+                                        onSelect={() =>
+                                            handleDeleteItems(getItemsForAction(item))
+                                        }
                                     >
                                         <Trash2 size={16} /> Delete
+                                        {isSelected && selectedItems.length > 1
+                                            ? ` (${selectedItems.length})`
+                                            : ""}
                                     </ContextMenu.Item>
                                 </ContextMenu.Content>
                             </ContextMenu.Portal>
                         </ContextMenu.Root>
-                    ))}
+                        )
+                    })}
                 </div>
             </Container>
         </div>

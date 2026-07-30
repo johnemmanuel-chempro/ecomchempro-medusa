@@ -66,18 +66,23 @@ export async function DELETE(req: MedusaRequest, res: MedusaResponse) {
     }
 
     try {
-        // 1) delete binary from storage
-        await deleteFilesWorkflow(req.scope).run({
-            input: {
-                ids: [existing.file_id],
-            },
-        })
+        // only delete binary from storage if no other media_file uses it
+        // (copy/paste can share the same file_id)
+        const sharedCount = await service.countFilesByFileId(existing.file_id)
+
+        if (sharedCount <= 1) {
+            await deleteFilesWorkflow(req.scope).run({
+                input: {
+                    ids: [existing.file_id],
+                },
+            })
+        }
     } catch (error) {
         console.log(error)
         // still delete DB row even if storage delete fails
     }
 
-    // 2) delete metadata row
+    // delete metadata row
     await service.deleteFile(id)
     return res.json({ message: "File deleted successfully" })
 }

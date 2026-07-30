@@ -12,68 +12,86 @@ function getService(req: MedusaRequest): MediaModuleService {
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
     const service = getService(req)
-    const file = req.file
+
+    // multer.array("files") puts files on req.files
+    const files = (req.files as Express.Multer.File[] | undefined) || []
 
     try {
-        if (!file) {
-            return res.status(400).json({ message: "Image file is required" })
-        }
-
-        if (!ALLOWED_IMAGE_TYPES.includes(file.mimetype)) {
-            return res.status(400).json({
-                message: "Only image files are allowed (jpeg, png, webp, gif)",
-            })
+        if (!files.length) {
+            return res.status(400).json({ message: "At least one image file is required" })
         }
 
         const folder_id = (req.body?.folder_id as string | undefined) || null
-        const name = (
-            (req.body?.name as string | undefined) ||
-            file.originalname
-        ).trim()
-
-        if (!name) {
-            return res.status(400).json({ message: "File name is required" })
-        }
 
         if (folder_id && !(await service.getFolder(folder_id))) {
             return res.status(400).json({ message: "Folder not found" })
         }
 
-        if (await service.getFileByName(name, folder_id)) {
-            return res.status(400).json({ message: "File with this name already exists here" })
+        // check every file is an allowed image type
+        for (const file of files) {
+            if (!ALLOWED_IMAGE_TYPES.includes(file.mimetype)) {
+                return res.status(400).json({
+                    message: `Only image files are allowed (jpeg, png, webp, gif). Bad file: ${file.originalname}`,
+                })
+            }
         }
 
-        // 1) upload binary to Medusa File Module (saves under /static)
+        // 1) upload all binaries to Medusa File Module
         const { result } = await uploadFilesWorkflow(req.scope).run({
             input: {
-                files: [
-                    {
-                        filename: file.originalname,
-                        mimeType: file.mimetype,
-                        content: file.buffer.toString("base64"),
-                        access: "public",
-                    },
-                ],
+                files: files.map((file) => ({
+                    filename: file.originalname,
+                    mimeType: file.mimetype,
+                    content: file.buffer.toString("base64"),
+                    access: "public" as const,
+                })),
             },
         })
 
-        const uploaded = result?.[0]
-        if (!uploaded?.url || !uploaded?.id) {
-            return res.status(400).json({ message: "Failed to upload file to storage" })
+        if (!result?.length) {
+            return res.status(400).json({ message: "Failed to upload files to storage" })
         }
 
-        // 2) save metadata row in our media_file table
-        const mediaFile = await service.createFile({
-            name,
-            folder_id,
-            file_id: uploaded.id,
-            url: uploaded.url,
-            mime_type: file.mimetype,
-            size: file.size,
-            alt: (req.body?.alt as string | undefined) || null,
-        })
+        // 2) save one media_file row per uploaded file
+        const createdFiles = []
 
-        return res.json(mediaFile)
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i]
+            const uploaded = result[i]
+
+            if (!uploaded?.url || !uploaded?.id) {
+                continue
+            }
+
+            // if name already exists here, auto-rename: photo (copy).png
+            const name = await service.getUniqueFileName(
+                file.originalname,
+                folder_id
+            )
+
+            const mediaFile = await service.createFile({
+                name,
+                folder_id,
+                file_id: uploaded.id,
+                url: uploaded.url,
+                mime_type: file.mimetype,
+                size: file.size,
+                alt: null,
+            })
+
+            createdFiles.push(mediaFile)
+        }
+
+        if (!createdFiles.length) {
+            return res.status(400).json({ message: "Failed to save uploaded files" })
+        }
+
+        // return array (UI can handle 1 or many)
+        return res.json({
+            files: createdFiles,
+            count: createdFiles.length,
+            message: `Uploaded ${createdFiles.length} file(s)`,
+        })
     } catch (error) {
         console.log(error)
         return res.status(400).json({ message: "Failed to create file" })

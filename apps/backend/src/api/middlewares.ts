@@ -13,7 +13,7 @@ export default defineMiddlewares({
     {
       method: ["POST"],
       matcher: "/admin/media/files",
-      middlewares: [upload.single("file")],
+      middlewares: [upload.array("files", 30)],
     },
   ],
 })
