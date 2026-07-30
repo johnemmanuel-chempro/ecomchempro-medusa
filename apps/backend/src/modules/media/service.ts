@@ -42,6 +42,12 @@ class MediaModuleService extends MedusaService({
         return folders as FolderDTO[]
     }
 
+    // all folders (for sidebar tree)
+    async getAllFolders(): Promise<FolderDTO[]> {
+        const folders = await this.listMediaFolders({})
+        return folders as FolderDTO[]
+    }
+
     async getFolderByName(
         name: string,
         parent_id?: string | null

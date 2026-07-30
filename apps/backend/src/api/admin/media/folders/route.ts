@@ -43,9 +43,16 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const service = getService(req)
-    const parent_id = (req.query.parent_id as string | undefined) ?? null
 
     try {
+        // ?all=true → every folder (used by sidebar tree)
+        const all = req.query.all
+        if (all === "true" || all === "1") {
+            const folders = await service.getAllFolders()
+            return res.json(folders)
+        }
+
+        const parent_id = (req.query.parent_id as string | undefined) ?? null
         const folders = await service.getListFolders(parent_id)
         return res.json(folders)
     } catch (error) {

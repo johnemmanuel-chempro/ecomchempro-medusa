@@ -3,7 +3,7 @@ import { Container, Heading, Text, Button, Input, Label, FocusModal } from "@med
 import { adminFetch } from "../../lib/sdk"
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
-import { Folder, Trash2, Pencil, FolderOpen, FolderPlus, Eye, Info, Copy, ClipboardPaste, Scissors, Upload } from "lucide-react"
+import { Folder, Trash2, Pencil, FolderOpen, FolderPlus, Eye, Info, Copy, ClipboardPaste, Scissors, Upload, ChevronRight, ChevronDown } from "lucide-react"
 import * as ContextMenu from "@radix-ui/react-context-menu"
 
 export default function FileManagerPage() {
@@ -13,6 +13,11 @@ export default function FileManagerPage() {
 
     const [folders, setFolders] = useState([])
     const [files, setFiles] = useState([])
+
+    // all folders for the left sidebar tree
+    const [allFolders, setAllFolders] = useState([])
+    // which folder ids are expanded in the sidebar: { [id]: true }
+    const [expandedIds, setExpandedIds] = useState({})
 
     // create folder form
     const [createFolderOpen, setCreateFolderOpen] = useState(false)
@@ -140,8 +145,15 @@ export default function FileManagerPage() {
                 { method: "GET" }
             )
 
+            // also refresh sidebar tree data
+            const allFoldersResponse = await adminFetch(
+                "/admin/media/folders?all=true",
+                { method: "GET" }
+            )
+
             setFolders(foldersResponse)
             setFiles(filesResponse)
+            setAllFolders(allFoldersResponse)
         } catch (error) {
             showToast(error.message || "Failed to load file manager", "error")
         }
@@ -150,6 +162,57 @@ export default function FileManagerPage() {
     useEffect(() => {
         fetchContents()
     }, [currentFolderId])
+
+    // keep sidebar ancestors expanded when path changes
+    useEffect(() => {
+        setExpandedIds((prev) => {
+            const next = { ...prev }
+            for (const item of folderPath) {
+                next[item.id] = true
+            }
+            return next
+        })
+    }, [folderPath])
+
+    // children of a parent (null = root level)
+    const getChildFolders = (parentId) => {
+        return allFolders.filter((folder) => {
+            if (parentId === null) {
+                return !folder.parent_id
+            }
+            return folder.parent_id === parentId
+        })
+    }
+
+    const toggleExpand = (folderId) => {
+        setExpandedIds((prev) => ({
+            ...prev,
+            [folderId]: !prev[folderId],
+        }))
+    }
+
+    // click a folder in the sidebar → open it + build breadcrumb path
+    const navigateToFolder = (folder) => {
+        const byId = {}
+        for (const f of allFolders) {
+            byId[f.id] = f
+        }
+
+        // walk from folder up to root
+        const chain = []
+        let current = folder
+        while (current) {
+            chain.unshift({ id: current.id, name: current.name })
+            current = current.parent_id ? byId[current.parent_id] : null
+        }
+
+        setFolderPath(chain)
+        setCurrentFolderId(folder.id)
+        setRenameTarget(null)
+        setDetailsFolder(null)
+        setViewFile(null)
+        setSelectedItems([])
+    }
 
     const handleCreateFolder = async () => {
         try {
@@ -578,6 +641,131 @@ export default function FileManagerPage() {
         setCurrentFolderId(nextPath[nextPath.length - 1].id)
     }
 
+    // recursive sidebar tree row (beginner-friendly: defined inside the page)
+    const renderFolderTreeNode = (folder, depth) => {
+        const children = getChildFolders(folder.id)
+        const hasChildren = children.length > 0
+        const isExpanded = !!expandedIds[folder.id]
+        const isActive = currentFolderId === folder.id
+        const isCutItem = isItemCut("folder", folder.id)
+        const item = {
+            type: "folder",
+            id: folder.id,
+            name: folder.name,
+        }
+
+        return (
+            <div key={folder.id}>
+                <ContextMenu.Root>
+                    <ContextMenu.Trigger asChild>
+                        <div
+                            className={`flex items-center gap-1 py-1.5 pr-2 rounded-md cursor-pointer text-sm select-none ${
+                                isActive
+                                    ? "bg-ui-bg-interactive text-ui-fg-on-color"
+                                    : "hover:bg-ui-bg-subtle text-ui-fg-base"
+                            } ${isCutItem ? "opacity-40" : ""}`}
+                            style={{ paddingLeft: `${8 + depth * 14}px` }}
+                            onClick={() => navigateToFolder(folder)}
+                        >
+                            <button
+                                type="button"
+                                className="shrink-0 w-4 h-4 flex items-center justify-center"
+                                onClick={(e) => {
+                                    e.stopPropagation()
+                                    if (hasChildren) {
+                                        toggleExpand(folder.id)
+                                    }
+                                }}
+                            >
+                                {hasChildren ? (
+                                    isExpanded ? (
+                                        <ChevronDown size={14} />
+                                    ) : (
+                                        <ChevronRight size={14} />
+                                    )
+                                ) : (
+                                    <span className="w-3.5" />
+                                )}
+                            </button>
+                            <Folder size={14} className="shrink-0" />
+                            <span className="truncate">
+                                {folder.name}
+                                {isCutItem ? " (cut)" : ""}
+                            </span>
+                        </div>
+                    </ContextMenu.Trigger>
+
+                    <ContextMenu.Portal>
+                        <ContextMenu.Content
+                            className="bg-white border rounded-md shadow-lg min-w-[180px] z-50"
+                            onCloseAutoFocus={(e) => {
+                                e.preventDefault()
+                            }}
+                        >
+                            <ContextMenu.Item
+                                className="text-sm outline-none px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
+                                onSelect={() => navigateToFolder(folder)}
+                            >
+                                <FolderOpen size={16} /> Open
+                            </ContextMenu.Item>
+
+                            <ContextMenu.Item
+                                className="text-sm outline-none px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
+                                onSelect={() => startRenameFolder(folder)}
+                            >
+                                <Pencil size={16} /> Rename
+                            </ContextMenu.Item>
+
+                            <ContextMenu.Item
+                                className="text-sm outline-none px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
+                                onSelect={() => startFolderDetails(folder)}
+                            >
+                                <Info size={16} /> Details
+                            </ContextMenu.Item>
+
+                            <ContextMenu.Item
+                                className="text-sm outline-none px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
+                                onSelect={() => handleCopyItems([item])}
+                            >
+                                <Copy size={16} /> Copy
+                            </ContextMenu.Item>
+
+                            <ContextMenu.Item
+                                className="text-sm outline-none px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
+                                onSelect={() => handleCutItems([item])}
+                            >
+                                <Scissors size={16} /> Cut
+                            </ContextMenu.Item>
+
+                            {clipboard?.items?.length > 0 && (
+                                <ContextMenu.Item
+                                    className="text-sm outline-none px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
+                                    onSelect={() => handlePaste(folder.id)}
+                                >
+                                    <ClipboardPaste size={16} /> Paste inside
+                                </ContextMenu.Item>
+                            )}
+
+                            <ContextMenu.Separator className="h-px bg-gray-200" />
+
+                            <ContextMenu.Item
+                                className="text-sm outline-none px-4 py-2 text-red-500 hover:bg-red-50 cursor-pointer flex items-center gap-2"
+                                onSelect={() => handleDeleteItems([item])}
+                            >
+                                <Trash2 size={16} /> Delete
+                            </ContextMenu.Item>
+                        </ContextMenu.Content>
+                    </ContextMenu.Portal>
+                </ContextMenu.Root>
+
+                {isExpanded &&
+                    children.map((child) =>
+                        renderFolderTreeNode(child, depth + 1)
+                    )}
+            </div>
+        )
+    }
+
     return (
         <div className="flex flex-col gap-y-4">
             <Container className="p-0">
@@ -589,9 +777,76 @@ export default function FileManagerPage() {
                 </div>
             </Container>
 
-            <Container className="p-6">
-                
+            <Container className="p-0 overflow-hidden">
+                <div className="flex min-h-[560px]">
+                    {/* ---------- LEFT SIDEBAR (folder tree) ---------- */}
+                    <div className="w-64 shrink-0 border-r border-ui-border-base p-3 overflow-auto bg-ui-bg-subtle">
+                        <Text
+                            size="small"
+                            className="px-2 mb-2 font-medium text-ui-fg-subtle"
+                        >
+                            Places
+                        </Text>
 
+                        {/* Root */}
+                        <ContextMenu.Root>
+                            <ContextMenu.Trigger asChild>
+                                <div
+                                    className={`flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer text-sm mb-1 select-none ${
+                                        currentFolderId === null
+                                            ? "bg-ui-bg-interactive text-ui-fg-on-color"
+                                            : "hover:bg-ui-bg-base text-ui-fg-base"
+                                    }`}
+                                    onClick={goToRoot}
+                                >
+                                    <FolderOpen size={14} />
+                                    <span>Root</span>
+                                </div>
+                            </ContextMenu.Trigger>
+
+                            <ContextMenu.Portal>
+                                <ContextMenu.Content
+                                    className="bg-white border rounded-md shadow-lg min-w-[180px] z-50"
+                                    onCloseAutoFocus={(e) => {
+                                        e.preventDefault()
+                                    }}
+                                >
+                                    <ContextMenu.Item
+                                        className="text-sm outline-none px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
+                                        onSelect={goToRoot}
+                                    >
+                                        <FolderOpen size={16} /> Open
+                                    </ContextMenu.Item>
+
+                                    {clipboard?.items?.length > 0 && (
+                                        <ContextMenu.Item
+                                            className="text-sm outline-none px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
+                                            onSelect={() => handlePaste(null)}
+                                        >
+                                            <ClipboardPaste size={16} /> Paste here
+                                        </ContextMenu.Item>
+                                    )}
+                                </ContextMenu.Content>
+                            </ContextMenu.Portal>
+                        </ContextMenu.Root>
+
+                        {/* Nested folders */}
+                        {getChildFolders(null).map((folder) =>
+                            renderFolderTreeNode(folder, 0)
+                        )}
+
+                        {allFolders.length === 0 && (
+                            <Text
+                                size="small"
+                                className="px-2 mt-2 text-ui-fg-muted"
+                            >
+                                No folders yet
+                            </Text>
+                        )}
+                    </div>
+
+                    {/* ---------- RIGHT CONTENT ---------- */}
+                    <div className="flex-1 min-w-0 p-6">
                 {/* Buttons open modals for create / upload / paste */}
                 <div className="mb-4 flex flex-wrap items-center gap-2">
                     <Button
@@ -1188,6 +1443,8 @@ export default function FileManagerPage() {
                         </ContextMenu.Root>
                         )
                     })}
+                </div>
+                    </div>
                 </div>
             </Container>
         </div>
