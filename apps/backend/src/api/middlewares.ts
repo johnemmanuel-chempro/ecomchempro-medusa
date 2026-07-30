@@ -10,5 +10,10 @@ export default defineMiddlewares({
       matcher: "/admin/import-export/:entity",
       middlewares: [upload.single("file")],
     },
+    {
+      method: ["POST"],
+      matcher: "/admin/media/files",
+      middlewares: [upload.single("file")],
+    },
   ],
 })

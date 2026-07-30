@@ -15,14 +15,33 @@ module.exports = defineConfig({
   },
   modules: [
     {
+      resolve: "@medusajs/medusa/file",
+      options: {
+        providers: [
+          {
+            resolve: "@medusajs/medusa/file-local",
+            id: "local",
+            options: {
+              upload_dir: "static",
+              backend_url: process.env.MEDUSA_BACKEND_URL
+                ? `${process.env.MEDUSA_BACKEND_URL}/static`
+                : "http://localhost:9000/static",
+            },
+          },
+        ],
+      },
+    },
+    {
       resolve: "./src/modules/import-export",
     },
     {
       resolve: "./src/modules/featured-products",
     },
-
     {
       resolve: "./src/modules/banners",
+    },
+    {
+      resolve: "./src/modules/media",
     },
   ],
 })
