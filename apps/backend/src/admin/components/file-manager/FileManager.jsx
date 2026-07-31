@@ -11,17 +11,6 @@ const Skeleton = ({ className = "" }) => (
     />
 )
 
-const SidebarTreeSkeleton = () => (
-    <div className="flex flex-col gap-y-2 px-1 mt-1">
-        {["w-28", "w-36", "w-24", "w-32", "w-40", "w-20"].map((widthClass, index) => (
-            <div key={index} className="flex items-center gap-2 px-1">
-                <Skeleton className="h-3.5 w-3.5 shrink-0" />
-                <Skeleton className={`h-4 ${widthClass}`} />
-            </div>
-        ))}
-    </div>
-)
-
 const FileGridSkeleton = () => (
     <div className="flex flex-wrap gap-x-2 gap-y-2">
         {Array.from({ length: 8 }).map((_, index) => (
@@ -903,23 +892,17 @@ export default function FileManager({ mode = "page", onSelectFile }) {
                         </ContextMenu.Root>
 
                         {/* Nested folders */}
-                        {isLoading ? (
-                            <SidebarTreeSkeleton />
-                        ) : (
-                            <>
-                                {getChildFolders(null).map((folder) =>
-                                    renderFolderTreeNode(folder, 0)
-                                )}
+                        {getChildFolders(null).map((folder) =>
+                            renderFolderTreeNode(folder, 0)
+                        )}
 
-                                {allFolders.length === 0 && (
-                                    <Text
-                                        size="small"
-                                        className="px-2 mt-2 text-ui-fg-muted"
-                                    >
-                                        No folders yet
-                                    </Text>
-                                )}
-                            </>
+                        {allFolders.length === 0 && (
+                            <Text
+                                size="small"
+                                className="px-2 mt-2 text-ui-fg-muted"
+                            >
+                                No folders yet
+                            </Text>
                         )}
                     </div>
 
@@ -979,8 +962,6 @@ export default function FileManager({ mode = "page", onSelectFile }) {
                         )}
                     </Text>
                 )}
-
-                
 
                 {/* ---------- NEW FOLDER MODAL ---------- */}
                 <FocusModal
