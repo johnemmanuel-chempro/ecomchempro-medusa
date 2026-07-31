@@ -19,7 +19,8 @@ export async function PUT(req: MedusaRequest, res: MedusaResponse) {
   }
 
   const service = getService(req)
-  const featured_products = await service.reorderFeaturedProducts(ids)
+  await service.reorderFeaturedProducts(ids)
+  const featured_products = await service.listFeaturedWithProducts(req.scope)
 
   res.json({ featured_products })
 }

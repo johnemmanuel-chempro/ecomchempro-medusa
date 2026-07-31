@@ -5,6 +5,34 @@ import { toast } from "sonner"
 import { Folder, Trash2, Pencil, FolderOpen, FolderPlus, Eye, Info, Copy, ClipboardPaste, Scissors, Upload, ChevronRight, ChevronDown, Check, Link } from "lucide-react"
 import * as ContextMenu from "@radix-ui/react-context-menu"
 
+const Skeleton = ({ className = "" }) => (
+    <div
+        className={`animate-pulse rounded-md bg-ui-bg-component-hover ${className}`}
+    />
+)
+
+const SidebarTreeSkeleton = () => (
+    <div className="flex flex-col gap-y-2 px-1 mt-1">
+        {["w-28", "w-36", "w-24", "w-32", "w-40", "w-20"].map((widthClass, index) => (
+            <div key={index} className="flex items-center gap-2 px-1">
+                <Skeleton className="h-3.5 w-3.5 shrink-0" />
+                <Skeleton className={`h-4 ${widthClass}`} />
+            </div>
+        ))}
+    </div>
+)
+
+const FileGridSkeleton = () => (
+    <div className="flex flex-wrap gap-x-2 gap-y-2">
+        {Array.from({ length: 8 }).map((_, index) => (
+            <div key={index} className="rounded-md p-3 flex flex-col gap-y-2">
+                <Skeleton className="h-[100px] w-[150px]" />
+                <Skeleton className="h-4 w-24" />
+            </div>
+        ))}
+    </div>
+)
+
 // mode: "page" = full File Manager page
 // mode: "picker" = used inside a modal to pick one image
 // onSelectFile(file) = called in picker mode when user selects an image
@@ -14,6 +42,7 @@ export default function FileManager({ mode = "page", onSelectFile }) {
     const [currentFolderId, setCurrentFolderId] = useState(null)
     const [folderPath, setFolderPath] = useState([]) // breadcrumb [{ id, name }]
 
+    const [isLoading, setIsLoading] = useState(true)
     const [folders, setFolders] = useState([])
     const [files, setFiles] = useState([])
 
@@ -128,7 +157,11 @@ export default function FileManager({ mode = "page", onSelectFile }) {
         return [clickedItem]
     }
 
-    const fetchContents = async () => {
+    const fetchContents = async ({ showLoading = false } = {}) => {
+        if (showLoading) {
+            setIsLoading(true)
+        }
+
         try {
             const parentQuery =
                 currentFolderId === null
@@ -159,11 +192,15 @@ export default function FileManager({ mode = "page", onSelectFile }) {
             setAllFolders(allFoldersResponse)
         } catch (error) {
             showToast(error.message || "Failed to load file manager", "error")
+        } finally {
+            if (showLoading) {
+                setIsLoading(false)
+            }
         }
     }
 
     useEffect(() => {
-        fetchContents()
+        fetchContents({ showLoading: true })
     }, [currentFolderId])
 
     // keep sidebar ancestors expanded when path changes
@@ -866,17 +903,23 @@ export default function FileManager({ mode = "page", onSelectFile }) {
                         </ContextMenu.Root>
 
                         {/* Nested folders */}
-                        {getChildFolders(null).map((folder) =>
-                            renderFolderTreeNode(folder, 0)
-                        )}
+                        {isLoading ? (
+                            <SidebarTreeSkeleton />
+                        ) : (
+                            <>
+                                {getChildFolders(null).map((folder) =>
+                                    renderFolderTreeNode(folder, 0)
+                                )}
 
-                        {allFolders.length === 0 && (
-                            <Text
-                                size="small"
-                                className="px-2 mt-2 text-ui-fg-muted"
-                            >
-                                No folders yet
-                            </Text>
+                                {allFolders.length === 0 && (
+                                    <Text
+                                        size="small"
+                                        className="px-2 mt-2 text-ui-fg-muted"
+                                    >
+                                        No folders yet
+                                    </Text>
+                                )}
+                            </>
                         )}
                     </div>
 
@@ -1248,6 +1291,10 @@ export default function FileManager({ mode = "page", onSelectFile }) {
                     Files
                 </Heading>
 
+                {isLoading ? (
+                    <FileGridSkeleton />
+                ) : (
+                <>
                 {folders.length === 0 && files.length === 0 && (
                     <Container className="mb-2">
                         <p>No folders or images here</p>
@@ -1497,6 +1544,8 @@ export default function FileManager({ mode = "page", onSelectFile }) {
                         )
                     })}
                 </div>
+                </>
+                )}
                     </div>
                 </div>
             </Container>

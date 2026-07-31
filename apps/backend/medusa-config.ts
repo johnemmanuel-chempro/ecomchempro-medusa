@@ -13,6 +13,15 @@ module.exports = defineConfig({
       cookieSecret: process.env.COOKIE_SECRET || "supersecret",
     }
   },
+  admin: {
+    // Vite blocks non-localhost hosts in dev (e.g. zrok tunnels).
+    // Leading "." allows any subdomain of shares.zrok.io.
+    vite: () => ({
+      server: {
+        allowedHosts: [".shares.zrok.io"],
+      },
+    }),
+  },
   modules: [
     {
       resolve: "@medusajs/medusa/file",
