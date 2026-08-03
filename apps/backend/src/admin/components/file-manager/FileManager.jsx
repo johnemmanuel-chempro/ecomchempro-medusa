@@ -63,6 +63,10 @@ export default function FileManager({ mode = "page", onSelectFile }) {
     // clipboard: { mode: "copy" | "cut", items: [{ type, id, name }] }
     const [clipboard, setClipboard] = useState(null)
 
+    // search in current folder + nested subfolders
+    const [searchQuery, setSearchQuery] = useState("")
+    const [isSearching, setIsSearching] = useState(false)
+
     const showToast = (message, type) => {
         toast[type](message, {
             position: "top-right",
@@ -192,6 +196,40 @@ export default function FileManager({ mode = "page", onSelectFile }) {
         fetchContents({ showLoading: true })
     }, [currentFolderId])
 
+    // debounce search — searches current folder + nested subfolders
+    useEffect(() => {
+        const q = searchQuery.trim()
+        if (!q) {
+            setIsSearching(false)
+            return
+        }
+
+        const timer = setTimeout(async () => {
+            setIsSearching(true)
+            try {
+                const params = new URLSearchParams({ q })
+                if (currentFolderId) {
+                    params.set("folder_id", currentFolderId)
+                }
+
+                const response = await adminFetch(
+                    `/admin/media/search?${params.toString()}`,
+                    { method: "GET" }
+                )
+
+                setFolders(response.folders ?? [])
+                setFiles(response.files ?? [])
+                setSelectedItems([])
+            } catch (error) {
+                showToast(error.message || "Search failed", "error")
+            } finally {
+                setIsSearching(false)
+            }
+        }, 300)
+
+        return () => clearTimeout(timer)
+    }, [searchQuery, currentFolderId])
+
     // keep sidebar ancestors expanded when path changes
     useEffect(() => {
         setExpandedIds((prev) => {
@@ -237,6 +275,7 @@ export default function FileManager({ mode = "page", onSelectFile }) {
 
         setFolderPath(chain)
         setCurrentFolderId(folder.id)
+        setSearchQuery("")
         setRenameTarget(null)
         setDetailsFolder(null)
         setViewFile(null)
@@ -674,24 +713,22 @@ export default function FileManager({ mode = "page", onSelectFile }) {
     }
 
     // go inside a folder (nested folders use parent_id)
+    // go inside a folder (rebuild full breadcrumb from tree)
     const openFolder = (folder) => {
-        setFolderPath((prev) => [...prev, { id: folder.id, name: folder.name }])
-        setCurrentFolderId(folder.id)
-        setRenameTarget(null)
-        setDetailsFolder(null)
-        setViewFile(null)
-        setSelectedItems([])
+        navigateToFolder(folder)
     }
 
     const goToRoot = () => {
         setFolderPath([])
         setCurrentFolderId(null)
+        setSearchQuery("")
     }
 
     const goToBreadcrumb = (index) => {
         const nextPath = folderPath.slice(0, index + 1)
         setFolderPath(nextPath)
         setCurrentFolderId(nextPath[nextPath.length - 1].id)
+        setSearchQuery("")
     }
 
     // recursive sidebar tree row (beginner-friendly: defined inside the page)
@@ -970,6 +1007,22 @@ export default function FileManager({ mode = "page", onSelectFile }) {
                                 )}
                             </Text>
                         )}
+                    </div>
+
+
+                    <div className="ml-auto w-64">
+                        <Input
+                            type="search"
+                            placeholder="Search files and folders"
+                            value={searchQuery}
+                            onChange={(e) => {
+                                const value = e.target.value
+                                setSearchQuery(value)
+                                if (!value.trim()) {
+                                    fetchContents()
+                                }
+                            }}
+                        />
                     </div>
 
                 </div>
@@ -1281,16 +1334,31 @@ export default function FileManager({ mode = "page", onSelectFile }) {
                 </div>
 
                 <Heading level="h2" className="mb-2">
-                    Files
+                    {searchQuery.trim() ? "Search results" : "Files"}
                 </Heading>
 
-                {isLoading ? (
+                {searchQuery.trim() ? (
+                    <Text size="small" className="text-ui-fg-subtle mb-2">
+                        Searching in{" "}
+                        {folderPath.length === 0
+                            ? "Root"
+                            : folderPath[folderPath.length - 1].name}{" "}
+                        and nested folders
+                        {isSearching ? "…" : ""}
+                    </Text>
+                ) : null}
+
+                {isLoading || isSearching ? (
                     <FileGridSkeleton />
                 ) : (
                 <>
                 {folders.length === 0 && files.length === 0 && (
                     <Container className="mb-2">
-                        <p>No folders or images here</p>
+                        <p>
+                            {searchQuery.trim()
+                                ? "No matching files or folders"
+                                : "No folders or images here"}
+                        </p>
                     </Container>
                 )}
 

@@ -122,6 +122,77 @@ class MediaModuleService extends MedusaService({
         return (files as FileDTO[]).length
     }
 
+    // ---------- SEARCH ----------
+
+    // Collect this folder + every nested folder id under it.
+    // rootId null = whole library (all folder ids).
+    collectFolderIdsInSubtree(
+        allFolders: FolderDTO[],
+        rootId?: string | null
+    ): Set<string> {
+        if (rootId === undefined || rootId === null || rootId === "") {
+            return new Set(allFolders.map((folder) => folder.id))
+        }
+
+        const ids = new Set<string>([rootId])
+        const queue = [rootId]
+
+        while (queue.length > 0) {
+            const parentId = queue.shift() as string
+            for (const folder of allFolders) {
+                if (folder.parent_id === parentId && !ids.has(folder.id)) {
+                    ids.add(folder.id)
+                    queue.push(folder.id)
+                }
+            }
+        }
+
+        return ids
+    }
+
+    // Search folder + nested folders/files by name (case-insensitive).
+    async searchInFolder(
+        query: string,
+        folderId?: string | null
+    ): Promise<{ folders: FolderDTO[]; files: FileDTO[] }> {
+        const q = query.trim().toLowerCase()
+        if (!q) {
+            return { folders: [], files: [] }
+        }
+
+        const allFolders = await this.getAllFolders()
+        const scopeIds = this.collectFolderIdsInSubtree(allFolders, folderId)
+        const searchingFromRoot =
+            folderId === undefined || folderId === null || folderId === ""
+
+        const folders = allFolders.filter((folder) => {
+            // stay inside current folder tree
+            if (!scopeIds.has(folder.id)) {
+                return false
+            }
+            // don't return the folder you are already inside
+            if (!searchingFromRoot && folder.id === folderId) {
+                return false
+            }
+            return folder.name.toLowerCase().includes(q)
+        })
+
+        const allFiles = (await this.listMediaFiles({})) as FileDTO[]
+        const files = allFiles.filter((file) => {
+            const fileFolderId = file.folder_id ?? null
+
+            if (searchingFromRoot) {
+                // whole library
+            } else if (fileFolderId === null || !scopeIds.has(fileFolderId)) {
+                return false
+            }
+
+            return file.name.toLowerCase().includes(q)
+        })
+
+        return { folders, files }
+    }
+
     // ---------- COPY / PASTE HELPERS ----------
 
     // "photo.png" -> "photo (copy).png"
