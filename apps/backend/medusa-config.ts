@@ -13,16 +13,37 @@ module.exports = defineConfig({
       cookieSecret: process.env.COOKIE_SECRET || "supersecret",
     }
   },
+  // Turns on Medusa's built-in role-based access control.
+  featureFlags: {
+    rbac: true,
+  },
   admin: {
     // Vite blocks non-localhost hosts in dev (e.g. zrok tunnels).
     // Leading "." allows any subdomain of shares.zrok.io.
-    vite: () => ({
-      server: {
-        allowedHosts: [".shares.zrok.io"],
-      },
-    }),
+    // Disable HMR on zrok — the websocket often fails through the tunnel
+    // and Vite then full-reloads the page in a loop ("context canceled").
+    vite: () => {
+      const backendUrl = process.env.MEDUSA_BACKEND_URL
+      const usingZrok =
+        typeof backendUrl === "string" && backendUrl.includes("shares.zrok.io")
+
+      return {
+        server: {
+          allowedHosts: [".shares.zrok.io"],
+          ...(usingZrok
+            ? {
+                origin: backendUrl,
+                hmr: false,
+              }
+            : {}),
+        },
+      }
+    },
   },
   modules: [
+    {
+      resolve: "@medusajs/medusa/rbac",
+    },
     {
       resolve: "@medusajs/medusa/file",
       options: {
