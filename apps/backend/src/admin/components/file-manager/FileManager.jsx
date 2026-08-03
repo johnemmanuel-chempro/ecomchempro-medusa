@@ -1,4 +1,4 @@
-import { Container, Heading, Text, Button, Input, Label, FocusModal } from "@medusajs/ui"
+import { Container, Heading, Text, Button, Input, Label, FocusModal, Tooltip } from "@medusajs/ui"
 import { adminFetch } from "../../lib/sdk"
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
@@ -846,7 +846,7 @@ export default function FileManager({ mode = "page", onSelectFile }) {
                             size="small"
                             className="px-2 mb-2 font-medium text-ui-fg-subtle"
                         >
-                            Places
+                            Folders
                         </Text>
 
                         {/* Root */}
@@ -910,18 +910,26 @@ export default function FileManager({ mode = "page", onSelectFile }) {
                     <div className="flex-1 min-w-0 p-6">
                 {/* Buttons open modals for create / upload / paste */}
                 <div className="mb-4 flex flex-wrap items-center gap-2">
-                    <Button
-                        variant="secondary"
-                        onClick={() => setCreateFolderOpen(true)}
-                    >
-                        <FolderPlus size={16} className="" /> New Folder
-                    </Button>
-                    <Button
-                        variant="primary"
-                        onClick={() => setUploadOpen(true)}
-                    >
-                        <Upload size={16} className="" /> Upload Image
-                    </Button>
+                    <Tooltip content="Create folder">
+                        <Button
+                            variant="secondary"
+                            onClick={() => setCreateFolderOpen(true)}
+                        >
+                            <FolderPlus size={16} />
+                        </Button>
+                    </Tooltip>
+                 
+
+                    <Tooltip content="Upload File">
+                        <Button
+                            variant="primary"
+                            onClick={() => setUploadOpen(true)}
+                        >
+                            <Upload size={16} className="" />
+                        </Button>
+                    </Tooltip>
+
+                    
                     <Button
                         variant="secondary"
                         disabled={!clipboard?.items?.length}
@@ -944,24 +952,29 @@ export default function FileManager({ mode = "page", onSelectFile }) {
                             </Button>
                         </>
                     )}
+
+                    <div className="flex items-center">
+                        {(selectedItems.length > 0 || clipboard?.items?.length > 0) && (
+                            <Text size="small" className="text-ui-fg-subtle">
+                                {selectedItems.length > 0 && (
+                                    <span>Selected: {selectedItems.length} item(s). </span>
+                                )}
+                                {clipboard?.items?.length > 0 && (
+                                    <span>
+                                        Clipboard ({clipboard.mode}):{" "}
+                                        {clipboard.items.length} item(s)
+                                        {clipboard.items.length === 1
+                                            ? ` — ${clipboard.items[0].name}`
+                                            : ""}
+                                    </span>
+                                )}
+                            </Text>
+                        )}
+                    </div>
+
                 </div>
 
-                {(selectedItems.length > 0 || clipboard?.items?.length > 0) && (
-                    <Text size="small" className="text-ui-fg-subtle mb-4">
-                        {selectedItems.length > 0 && (
-                            <span>Selected: {selectedItems.length} item(s). </span>
-                        )}
-                        {clipboard?.items?.length > 0 && (
-                            <span>
-                                Clipboard ({clipboard.mode}):{" "}
-                                {clipboard.items.length} item(s)
-                                {clipboard.items.length === 1
-                                    ? ` — ${clipboard.items[0].name}`
-                                    : ""}
-                            </span>
-                        )}
-                    </Text>
-                )}
+                
 
                 {/* ---------- NEW FOLDER MODAL ---------- */}
                 <FocusModal
@@ -1253,18 +1266,17 @@ export default function FileManager({ mode = "page", onSelectFile }) {
 
                 {/* Breadcrumb — shows nested path: Root / Parent / Child */}
                 <div className="mb-4 flex flex-wrap items-center gap-2">
-                    <Button variant="secondary" size="small" onClick={goToRoot}>
+                    <div className="text-sm font-medium text-gray-400 cursor-pointer" onClick={goToRoot}>
                         Root
-                    </Button>
+                    </div>
                     {folderPath.map((item, index) => (
-                        <Button
+                        <div
                             key={item.id}
-                            variant="secondary"
-                            size="small"
+                            className="text-sm font-medium text-gray-400 cursor-pointer"
                             onClick={() => goToBreadcrumb(index)}
                         >
                             / {item.name}
-                        </Button>
+                        </div>
                     ))}
                 </div>
 
