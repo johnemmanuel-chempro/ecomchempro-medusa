@@ -2,7 +2,7 @@ import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http"
 import { uploadFilesWorkflow } from "@medusajs/medusa/core-flows"
 import { MEDIA_MODULE } from "../../../../modules/media"
 import MediaModuleService from "../../../../modules/media/service"
-import { ALLOWED_IMAGE_TYPES } from "../../../../modules/media/types"
+import { ALLOWED_IMAGE_TYPES, CreateFileInput } from "../../../../modules/media/types"
 
 export const AUTHENTICATE = false // temporarily disable authentication
 
@@ -21,7 +21,11 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
             return res.status(400).json({ message: "At least one image file is required" })
         }
 
-        const folder_id = (req.body?.folder_id as string | undefined) || null
+        const body = (req.body ?? {}) as { folder_id?: string }
+        const folder_id =
+            typeof body.folder_id === "string" && body.folder_id.trim()
+                ? body.folder_id.trim()
+                : null
 
         if (folder_id && !(await service.getFolder(folder_id))) {
             return res.status(400).json({ message: "Folder not found" })
@@ -53,7 +57,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
         }
 
         // 2) save one media_file row per uploaded file
-        const createdFiles = []
+        const createdFiles: CreateFileInput[] = []
 
         for (let i = 0; i < files.length; i++) {
             const file = files[i]
