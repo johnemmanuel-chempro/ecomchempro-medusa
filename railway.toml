@@ -4,5 +4,6 @@ dockerfilePath = "Dockerfile"
 
 [deploy]
 healthcheckPath = "/health"
-healthcheckTimeout = 300
+# First boot runs db:migrate; allow more time before /health is up.
+healthcheckTimeout = 600
 restartPolicyType = "ON_FAILURE"

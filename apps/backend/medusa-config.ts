@@ -5,6 +5,15 @@ loadEnv(process.env.NODE_ENV || 'development', process.cwd())
 module.exports = defineConfig({
   projectConfig: {
     databaseUrl: process.env.DATABASE_URL,
+    // Railway public Postgres needs SSL; keep local Docker/Laragon plain.
+    databaseDriverOptions:
+      process.env.NODE_ENV === "production"
+        ? {
+            connection: {
+              ssl: { rejectUnauthorized: false },
+            },
+          }
+        : undefined,
     http: {
       storeCors: process.env.STORE_CORS!,
       adminCors: process.env.ADMIN_CORS!,
