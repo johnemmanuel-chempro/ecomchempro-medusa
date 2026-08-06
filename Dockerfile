@@ -43,11 +43,17 @@ RUN set -e; \
     fi; \
   done
 
+# Railway injects service env into the image build. If DISABLE_MEDUSA_ADMIN=true,
+# `medusa build` skips admin and runtime then crashes looking for index.html.
+ENV DISABLE_MEDUSA_ADMIN=false
+
 RUN npm run build --workspace=@dtc/backend
 
 # Actual require() (not just resolve) — matches Medusa's runtime loader.
 WORKDIR /app/apps/backend
-RUN node -e "require('@medusajs/medusa/auth-emailpass'); require('@medusajs/medusa/fulfillment-manual'); console.log('medusa providers ok')"
+RUN node -e "require('@medusajs/medusa/auth-emailpass'); require('@medusajs/medusa/fulfillment-manual'); console.log('medusa providers ok')" \
+  && test -f .medusa/server/public/admin/index.html \
+  && echo "admin index.html ok"
 
 FROM node:20-bookworm-slim AS runner
 WORKDIR /app
@@ -55,6 +61,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
 ENV PORT=9000
+ENV DISABLE_MEDUSA_ADMIN=false
 # Fallback so nested workspace packages stay visible if medusa loads from root.
 ENV NODE_PATH=/app/apps/backend/node_modules:/app/node_modules
 
