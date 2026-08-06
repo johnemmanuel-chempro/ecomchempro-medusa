@@ -66,4 +66,6 @@ WORKDIR /app/apps/backend
 
 EXPOSE 9000
 
-CMD ["sh", "-c", "npx medusa db:migrate --skip-links && npx medusa start"]
+# Sync link tables (e.g. publishable_api_key_sales_channel) then run seed scripts.
+# --execute-safe-links is non-interactive (required in Docker/Railway).
+CMD ["sh", "-c", "npx medusa db:migrate --execute-safe-links && npx medusa start"]
